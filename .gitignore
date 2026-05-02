@@ -1,0 +1,11 @@
+build/
+dist/
+frontend/dist/
+frontend/node_modules/
+ca/
+state/
+*.log
+config.json
+*.tmp
+.DS_Store
+
