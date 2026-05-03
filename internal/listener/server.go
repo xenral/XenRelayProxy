@@ -21,6 +21,7 @@ import (
 	"xenrelayproxy/internal/config"
 	"xenrelayproxy/internal/mitm"
 	"xenrelayproxy/internal/obs"
+	"xenrelayproxy/internal/protocol"
 	"xenrelayproxy/internal/scheduler"
 )
 
@@ -72,7 +73,7 @@ func NewServer(cfg config.Config, relay Relay, mitmMgr *mitm.Manager, sched *sch
 		logs:      logs,
 		log:       log,
 		router:    NewRouter(cfg),
-		cache:     cache.New(50 * 1024 * 1024),
+		cache:     cache.New(cfg.CacheMaxBytes),
 	}
 }
 
@@ -174,12 +175,21 @@ func (s *Server) handleConnect(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	mode := MITMRelay
-	if s.router.ShouldSNIRewrite(host) {
-		mode = MITMSNIRewrite
-	}
+	mode := s.mitmModeFor(host)
 	_, _ = io.WriteString(client, "HTTP/1.1 200 Connection Established\r\n\r\n")
 	s.handleMITMStream(host, port, client, mode)
+}
+
+// mitmModeFor returns the MITM mode for a given host. SNI-rewrite is the
+// default for hosts in `sni_rewrite_hosts`, but the user can force every
+// such host through the Apps Script relay by setting
+// `force_relay_sni_hosts: true` (e.g. when YouTube is geo-blocked and the
+// direct front-tunnel can't reach it).
+func (s *Server) mitmModeFor(host string) MITMMode {
+	if s.router.ShouldSNIRewrite(host) && !s.cfg.ForceRelaySNIHosts {
+		return MITMSNIRewrite
+	}
+	return MITMRelay
 }
 
 func (s *Server) handleMITMStream(host, port string, raw net.Conn, mode MITMMode) {
@@ -194,7 +204,7 @@ func (s *Server) handleMITMStream(host, port string, raw net.Conn, mode MITMMode
 	}
 	tlsConn := tls.Server(raw, tlsCfg)
 	if err := tlsConn.Handshake(); err != nil {
-		s.logs.Add(obs.LevelDebug, "mitm", "TLS handshake failed for "+host+": "+err.Error())
+		s.logs.Add(obs.LevelWarn, "mitm", "TLS handshake failed for "+host+" — CA not trusted by browser? "+err.Error())
 		return
 	}
 	reader := bufio.NewReader(tlsConn)
@@ -231,6 +241,13 @@ func (s *Server) writeRequestResponse(conn net.Conn, req *http.Request, mode MIT
 			resp = errorResponse(req, err, http.StatusServiceUnavailable)
 		}
 	}
+	// In MITM mode the browser still enforces CORS when JS on one
+	// origin (e.g. x.com) fetches from another (api.x.com). Without
+	// CORS headers on error/fast-fail responses the browser masks the
+	// real error behind "CORS request did not succeed" / HTTP-0.
+	if origin := req.Header.Get("Origin"); origin != "" {
+		ensureCORS(resp.Header, origin)
+	}
 	defer resp.Body.Close()
 	return resp.Write(conn)
 }
@@ -242,11 +259,22 @@ func (s *Server) serveRelayed(w http.ResponseWriter, req *http.Request) {
 		if errors.Is(err, scheduler.ErrNoAccountAvailable) {
 			status = http.StatusServiceUnavailable
 		}
+		// Set CORS on error responses so cross-origin fetches see the
+		// real error instead of "CORS request did not succeed".
+		if origin := req.Header.Get("Origin"); origin != "" {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
+			w.Header().Set("Vary", "Origin")
+		}
 		http.Error(w, err.Error(), status)
 		return
 	}
 	defer resp.Body.Close()
-	writeHTTPResponse(w, resp, req.Header.Get("Origin"))
+	origin := ""
+	if s.cfg.InjectPermissiveCORS {
+		origin = req.Header.Get("Origin")
+	}
+	writeHTTPResponse(w, resp, origin)
 }
 
 func (s *Server) responseFor(req *http.Request) (*http.Response, error) {
@@ -264,6 +292,12 @@ func (s *Server) responseFor(req *http.Request) (*http.Response, error) {
 	}
 	req.RequestURI = ""
 
+	if s.isLongPollPath(req) {
+		s.logs.Add(obs.LevelDebug, "longpoll",
+			"fast-fail "+req.Method+" "+req.URL.String()+" (matches block_long_poll_paths)")
+		return longPollFastFailResponse(req), nil
+	}
+
 	if resp, handled, err := s.tryChunkedDownload(req); handled {
 		if err != nil {
 			s.metrics.Record(host, 0, 0, time.Since(start), err)
@@ -280,8 +314,12 @@ func (s *Server) responseFor(req *http.Request) (*http.Response, error) {
 		}
 	}
 
+	label := req.Method + " " + req.URL.Host + req.URL.Path
+	logCookies(s.logs, label, req.Header)
+
 	resp, err := s.relay.Do(req.Context(), req)
 	if err != nil {
+		s.logs.Add(obs.LevelWarn, "relay", req.Method+" "+req.URL.String()+" → "+err.Error())
 		s.metrics.Record(host, 0, 0, time.Since(start), err)
 		return nil, err
 	}
@@ -296,6 +334,7 @@ func (s *Server) responseFor(req *http.Request) (*http.Response, error) {
 		s.metrics.Record(host, 0, 0, time.Since(start), err)
 		return nil, err
 	}
+	logResponse(s.logs, label, resp, len(body), s.cfg)
 	if cache.Cacheable(req) {
 		s.cache.Put(req.URL.String(), resp, body, cache.TTL(resp, req.URL.String()))
 	}
@@ -394,7 +433,11 @@ func (s *Server) directTunnel(target string, client net.Conn, buffered *bufio.Re
 	defer client.Close()
 	upstream, err := net.DialTimeout("tcp", target, time.Duration(s.cfg.TCPConnectTimeout)*time.Second)
 	if err != nil {
-		s.logs.Add(obs.LevelWarn, "direct", "dial "+target+" failed: "+err.Error())
+		level := obs.LevelWarn
+		if strings.Contains(err.Error(), "connection refused") {
+			level = obs.LevelDebug
+		}
+		s.logs.Add(level, "direct", "dial "+target+" failed: "+err.Error())
 		return
 	}
 	defer upstream.Close()
@@ -413,16 +456,26 @@ func (s *Server) directTunnel(target string, client net.Conn, buffered *bufio.Re
 	<-errc
 }
 
+// writeHTTPResponse forwards every upstream header verbatim. When
+// `origin` is non-empty (caller opted into permissive CORS via
+// `inject_permissive_cors`), the upstream Access-Control-* headers are
+// stripped and replaced with a permissive set scoped to that origin.
+//
+// The default is to leave CORS alone: rewriting it can break legit
+// cross-origin auth flows (Google OAuth, X.com login) where the
+// upstream sets specific Allow-Origin/Allow-Credentials values that
+// the browser cross-checks.
 func writeHTTPResponse(w http.ResponseWriter, resp *http.Response, origin string) {
+	overrideCORS := origin != ""
 	for key, values := range resp.Header {
-		if strings.HasPrefix(strings.ToLower(key), "access-control-") {
+		if overrideCORS && strings.HasPrefix(strings.ToLower(key), "access-control-") {
 			continue
 		}
 		for _, value := range values {
 			w.Header().Add(key, value)
 		}
 	}
-	if origin != "" {
+	if overrideCORS {
 		injectCORS(w.Header(), origin)
 	}
 	status := resp.StatusCode
@@ -452,6 +505,19 @@ func corsPreflightResponse(req *http.Request) *http.Response {
 		Body:          io.NopCloser(bytes.NewReader(nil)),
 		ContentLength: 0,
 		Request:       req,
+	}
+}
+
+// ensureCORS sets permissive CORS headers only if not already present
+// in the response. Used on MITM error/fast-fail responses to prevent
+// the browser from masking the real error behind "CORS request did not
+// succeed". On successful upstream responses the headers are already
+// set by the origin server and this function is a no-op.
+func ensureCORS(h http.Header, origin string) {
+	if h.Get("Access-Control-Allow-Origin") == "" {
+		h.Set("Access-Control-Allow-Origin", origin)
+		h.Set("Access-Control-Allow-Credentials", "true")
+		h.Set("Vary", "Origin")
 	}
 }
 
@@ -502,4 +568,152 @@ func requestContentLength(req *http.Request) int64 {
 		return 0
 	}
 	return req.ContentLength
+}
+
+// logCookies emits a DEBUG-level summary of cookie-related headers on
+// the request side: count of Cookie pairs + total byte size.
+// (The response-side equivalent has been merged into logResponse so a
+// single line per response shows everything we know about it.)
+func logCookies(logs *obs.Ring, label string, h http.Header) {
+	if logs == nil || h == nil {
+		return
+	}
+	cookie := h.Get("Cookie")
+	if cookie == "" {
+		return
+	}
+	count := strings.Count(cookie, ";") + 1
+	logs.Add(obs.LevelDebug, "cookie", fmt.Sprintf("%s — request Cookie: %d pair(s), %d bytes", label, count, len(cookie)))
+}
+
+// logResponse emits exactly one log entry per relay response containing
+// everything diagnosable about the response in one line:
+//
+//   status=N body=Bb Set-Cookie=K names=[...] dbg=[...] | dbg=missing
+//
+// "dbg=missing" means Apps Script's reply envelope had no `_dbg`
+// field, which almost always means the deployed Code.gs is older than
+// the version in the repo and needs to be redeployed.
+//
+// Promoted to WARN when:
+//   - An auth-shaped path returns zero Set-Cookies
+//   - Zero cookies were forwarded to the upstream (ck=false)
+//   - A redirect (302/303) has zero Set-Cookies (possible UrlFetchApp swallow)
+//   - decoded_sc < sc (cookie loss in JSON transport layer)
+func logResponse(logs *obs.Ring, label string, resp *http.Response, bodyLen int, cfg config.Config) {
+	if logs == nil || resp == nil || resp.Header == nil {
+		return
+	}
+	setCookies := resp.Header.Values("Set-Cookie")
+	names := make([]string, 0, len(setCookies))
+	for _, c := range setCookies {
+		if eq := strings.Index(c, "="); eq > 0 {
+			names = append(names, c[:eq])
+		} else {
+			names = append(names, "<malformed>")
+		}
+	}
+	dbgHeader := resp.Header.Get(protocol.DebugHeader)
+	resp.Header.Del(protocol.DebugHeader) // never leak to the browser
+	dbgPart := "dbg=missing(redeploy_Code.gs?)"
+	if dbgHeader != "" {
+		dbgPart = "dbg=[" + dbgHeader + "]"
+	}
+
+	level := obs.LevelDebug
+
+	// Promote to WARN on auth-like paths with zero Set-Cookies.
+	if len(setCookies) == 0 && isAuthLikePath(label) {
+		level = obs.LevelWarn
+	}
+	// Promote to WARN if Cookie header was not sent upstream on auth path.
+	if dbgHeader != "" && strings.Contains(dbgHeader, "ck=false") && isAuthLikePath(label) {
+		level = obs.LevelWarn
+	}
+	// Promote to WARN on redirects with zero Set-Cookies — possible
+	// UrlFetchApp cookie jar interference.
+	if len(setCookies) == 0 && (resp.StatusCode == 302 || resp.StatusCode == 303) {
+		level = obs.LevelWarn
+	}
+	// Promote to WARN if Apps Script saw cookies but our decoder lost some.
+	if dbgHeader != "" {
+		if scIdx := strings.Index(dbgHeader, "sc="); scIdx >= 0 {
+			var asSC int
+			fmt.Sscanf(dbgHeader[scIdx:], "sc=%d", &asSC)
+			if asSC > 0 && len(setCookies) < asSC {
+				level = obs.LevelWarn
+			}
+		}
+	}
+
+	msg := fmt.Sprintf("%s — status=%d body=%db Set-Cookie=%d names=%v %s",
+		label, resp.StatusCode, bodyLen, len(setCookies), names, dbgPart)
+	logs.Add(level, "upstream", msg)
+
+	// Verbose per-cookie logging when cookie_debug_mode is enabled.
+	if cfg.CookieDebugMode && len(setCookies) > 0 {
+		for i, sc := range setCookies {
+			logs.Add(obs.LevelInfo, "cookie-debug",
+				fmt.Sprintf("%s — Set-Cookie[%d]: %s", label, i, sc))
+		}
+	}
+}
+
+// isLongPollPath returns true if the request URL matches any
+// configured long-poll / SSE / streaming path. These endpoints hold
+// the upstream connection open until the relay timeout fires, which
+// wedges the proxy and triggers broken-pipe errors back to the
+// browser. Fast-failing them with 504 lets the page continue while
+// long-poll-dependent features (live updates, presence) gracefully
+// degrade.
+func (s *Server) isLongPollPath(req *http.Request) bool {
+	if req == nil || req.URL == nil || len(s.cfg.BlockLongPollPaths) == 0 {
+		return false
+	}
+	full := req.URL.Host + req.URL.Path
+	for _, pat := range s.cfg.BlockLongPollPaths {
+		if pat == "" {
+			continue
+		}
+		if strings.Contains(full, pat) {
+			return true
+		}
+	}
+	return false
+}
+
+func longPollFastFailResponse(req *http.Request) *http.Response {
+	body := []byte("blocked: long-poll endpoint not supported through relay\n")
+	h := http.Header{
+		"Content-Type":   []string{"text/plain; charset=utf-8"},
+		"Content-Length": []string{strconv.Itoa(len(body))},
+	}
+	// Include CORS so cross-origin long-poll fetches see a clean 504
+	// instead of "CORS request did not succeed" / HTTP-0.
+	if origin := req.Header.Get("Origin"); origin != "" {
+		h.Set("Access-Control-Allow-Origin", origin)
+		h.Set("Access-Control-Allow-Credentials", "true")
+		h.Set("Vary", "Origin")
+	}
+	return &http.Response{
+		StatusCode:    http.StatusGatewayTimeout,
+		Status:        "504 Gateway Timeout",
+		Header:        h,
+		Body:          io.NopCloser(bytes.NewReader(body)),
+		ContentLength: int64(len(body)),
+		Request:       req,
+	}
+}
+
+// isAuthLikePath returns true for request labels that look like login /
+// logout / auth / session endpoints. Used to flag when zero Set-Cookies
+// come back on a path that almost certainly should have set them.
+func isAuthLikePath(label string) bool {
+	low := strings.ToLower(label)
+	for _, hint := range []string{"login", "logout", "signin", "signout", "sign-in", "sign-out", "auth", "session", "/oauth", "/saml"} {
+		if strings.Contains(low, hint) {
+			return true
+		}
+	}
+	return false
 }
