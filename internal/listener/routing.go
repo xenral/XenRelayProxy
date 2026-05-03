@@ -28,7 +28,7 @@ func (r Router) ShouldBypass(host string) bool {
 	if ip := net.ParseIP(host); ip != nil {
 		return ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast()
 	}
-	return matchesAny(host, r.cfg.BypassHosts)
+	return matchesAny(host, r.cfg.BypassHosts) || matchesAny(host, r.cfg.DirectTunnelHosts)
 }
 
 func (r Router) ShouldDirectGoogle(host string) bool {
@@ -44,7 +44,7 @@ func (r Router) ShouldSNIRewrite(host string) bool {
 	if r.ShouldDirectGoogle(host) || r.ShouldBypass(host) {
 		return false
 	}
-	return matchesAny(host, r.cfg.SNIRewriteHosts)
+	return matchesAny(host, r.cfg.SNIRewriteHosts) || matchesAny(host, r.cfg.CookieCriticalHosts)
 }
 
 func (r Router) HostOverride(host string) string {

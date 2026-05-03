@@ -51,10 +51,18 @@ type Config struct {
 	DownloadMaxParallel  int               `json:"chunked_download_max_parallel"`
 	DownloadMaxChunks    int               `json:"chunked_download_max_chunks"`
 	DownloadExtensions   []string          `json:"chunked_download_extensions"`
+	CacheMaxBytes        int64             `json:"cache_max_bytes"`
+	MetricsMaxHosts      int               `json:"metrics_max_hosts"`
 	BypassHosts          []string          `json:"bypass_hosts"`
 	DirectGoogleExclude  []string          `json:"direct_google_exclude"`
 	DirectGoogleAllow    []string          `json:"direct_google_allow"`
 	SNIRewriteHosts      []string          `json:"sni_rewrite_hosts"`
+	ForceRelaySNIHosts   bool              `json:"force_relay_sni_hosts"`
+	InjectPermissiveCORS bool              `json:"inject_permissive_cors"`
+	CookieDebugMode      bool              `json:"cookie_debug_mode"`
+	CookieCriticalHosts  []string          `json:"cookie_critical_hosts"`
+	DirectTunnelHosts    []string          `json:"direct_tunnel_hosts"`
+	BlockLongPollPaths   []string          `json:"block_long_poll_paths"`
 	BlockHosts           []string          `json:"block_hosts"`
 	Hosts                map[string]string `json:"hosts"`
 }
@@ -97,6 +105,16 @@ func Load(path string) (Config, error) {
 	return cfg, cfg.Validate()
 }
 
+// SaveDraft writes cfg without running Validate, so partial configs (e.g. with
+// an empty auth_key) can be persisted while the user is still filling in fields.
+func SaveDraft(path string, cfg Config) error {
+	cfg.SetDefaults()
+	if err := cfg.Normalize(); err != nil {
+		return err
+	}
+	return writeJSON(path, cfg)
+}
+
 func Save(path string, cfg Config) error {
 	cfg.SetDefaults()
 	if err := cfg.Normalize(); err != nil {
@@ -105,6 +123,10 @@ func Save(path string, cfg Config) error {
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
+	return writeJSON(path, cfg)
+}
+
+func writeJSON(path string, cfg Config) error {
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
@@ -167,6 +189,26 @@ func (c *Config) SetDefaults() {
 	}
 	if c.DownloadMaxChunks == 0 {
 		c.DownloadMaxChunks = 256
+	}
+	if c.CacheMaxBytes == 0 {
+		c.CacheMaxBytes = 50 * 1024 * 1024
+	}
+	if c.MetricsMaxHosts == 0 {
+		c.MetricsMaxHosts = 256
+	}
+	if c.BlockLongPollPaths == nil {
+		c.BlockLongPollPaths = []string{
+			// x.com long-poll / SSE event streams — these hold the
+			// connection open for ~30s and exhaust the relay timeout.
+			"api.x.com/live_pipeline/events",
+			"api.twitter.com/live_pipeline/events",
+			// Google Meet / Hangouts WebSocket-equivalents.
+			"clients6.google.com/meetings",
+			"waa-pa.clients6.google.com",
+			// Generic SSE / WebSocket-upgrade signals.
+			"/api/v1/events",
+			"/api/v2/events",
+		}
 	}
 	if len(c.DownloadExtensions) == 0 {
 		c.DownloadExtensions = []string{

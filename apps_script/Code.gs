@@ -6,7 +6,7 @@
  * response shape.
  */
 
-const AUTH_KEY = "CHANGE_ME_TO_A_STRONG_SECRET";
+const AUTH_KEY = "OgXHFEFjk/ApnnpXJbsEwMwlOHDhmhmNihRIEH8077k=";
 
 // Optional server-side hop. Leave empty for direct UrlFetchApp.fetch.
 const RELAY_URL = "";
@@ -40,7 +40,7 @@ function _doSingle(req) {
 
   const opts = _buildOpts(req);
   const resp = UrlFetchApp.fetch(req.u, opts);
-  return _json(_reply(resp));
+  return _json(_reply(resp, opts, req));
 }
 
 function _doBatch(items) {
@@ -107,7 +107,7 @@ function _doBatch(items) {
       continue;
     }
     const resp = responses[rIdx++];
-    results.push(resp ? _reply(resp) : { e: "fetch failed" });
+    results.push(resp ? _reply(resp, fetchArgs[rIdx - 1], items[i]) : { e: "fetch failed" });
   }
   return _json({ r: results });
 }
@@ -123,7 +123,8 @@ function _doRelayed(req) {
     validateHttpsCertificates: false
   });
   try {
-    return _json(JSON.parse(resp.getContentText()));
+    var parsed = JSON.parse(resp.getContentText());
+    return _json(_enrichRelayReply(parsed, req));
   } catch (err) {
     return _json({ e: "relay parse error: " + resp.getContentText().substring(0, 200) });
   }
@@ -182,12 +183,66 @@ function _doBatchRelayed(items) {
       continue;
     }
     try {
-      results.push(JSON.parse(resp.getContentText()));
+      results.push(_enrichRelayReply(JSON.parse(resp.getContentText()), items[i]));
     } catch (parseErr) {
       results.push({ e: "relay parse error" });
     }
   }
   return _json({ r: results });
+}
+
+// _enrichRelayReply post-processes a reply received from the external
+// relay server (RELAY_URL) to add cookie handling that the relay server
+// may not provide:
+//   - Splits comma-joined Set-Cookie headers in the `h` map
+//   - Populates the `c` field (v2.1 explicit Set-Cookie array)
+//   - Populates the `d` field (debug counters)
+// This ensures the Go proxy receives the same enriched format regardless
+// of whether the request was handled locally or via an external relay.
+function _enrichRelayReply(reply, req) {
+  if (!reply || reply.e || !reply.h) return reply;
+
+  // Extract and normalize Set-Cookie from the relay's header map.
+  var setCookieArr = [];
+  for (var k in reply.h) {
+    if (!Object.prototype.hasOwnProperty.call(reply.h, k)) continue;
+    if (k.toLowerCase() === "set-cookie") {
+      var v = reply.h[k];
+      var split = _splitSetCookie(v);
+      reply.h[k] = split; // normalize in-place for the H map too
+      setCookieArr = setCookieArr.concat(split);
+    }
+  }
+
+  // Populate the v2.1 `c` field if not already present.
+  if (!reply.c && setCookieArr.length > 0) {
+    reply.c = setCookieArr;
+  }
+
+  // Populate debug counters if not already present.
+  if (!reply.d) {
+    var hk = 0;
+    for (var hkey in reply.h) {
+      if (Object.prototype.hasOwnProperty.call(reply.h, hkey)) hk++;
+    }
+    var cl = 0, ck = false;
+    if (req && req.h) {
+      for (var rk in req.h) {
+        if (Object.prototype.hasOwnProperty.call(req.h, rk) && rk.toLowerCase() === "cookie") {
+          ck = true;
+          cl = String(req.h[rk]).length;
+          break;
+        }
+      }
+    }
+    reply.d = {
+      sc: setCookieArr.length,
+      hk: hk,
+      cl: cl,
+      ck: ck
+    };
+  }
+  return reply;
 }
 
 function _buildOpts(req) {
@@ -230,19 +285,183 @@ function _relayPayload(req) {
   return payload;
 }
 
-function _reply(resp) {
+function _reply(resp, opts, req) {
+  var headers = _respHeaders(resp);
+
+  // Extract Set-Cookie into a dedicated array (protocol v2.1 "c" field).
+  // This bypasses all header-map casing/typing issues for the one header
+  // that matters most for authentication flows.
+  var setCookieArr = [];
+  for (var k in headers) {
+    if (Object.prototype.hasOwnProperty.call(headers, k) && k.toLowerCase() === "set-cookie") {
+      var v = headers[k];
+      if (Array.isArray(v)) {
+        setCookieArr = setCookieArr.concat(v);
+      } else if (v != null) {
+        setCookieArr = setCookieArr.concat(_splitSetCookie(v));
+      }
+    }
+  }
+
+  // _dbg surfaces what Apps Script *actually* sent and saw, so the Go
+  // side can tell the difference between (a) protocol-decoder cookie
+  // loss and (b) the upstream simply not returning any cookies.
+  // Naming kept short to fit Apps Script's response size budget.
+  var dbg = {
+    sc: setCookieArr.length,
+    hk: 0,
+    cl: 0,    // length of the Cookie header WE sent to the upstream
+    ck: false // did we send a Cookie header at all?
+  };
+  for (var hk in headers) {
+    if (Object.prototype.hasOwnProperty.call(headers, hk)) dbg.hk++;
+  }
+  if (opts && opts.headers) {
+    for (var sk in opts.headers) {
+      if (Object.prototype.hasOwnProperty.call(opts.headers, sk) && sk.toLowerCase() === "cookie") {
+        dbg.ck = true;
+        dbg.cl = String(opts.headers[sk]).length;
+        break;
+      }
+    }
+  }
   return {
     s: resp.getResponseCode(),
-    h: _respHeaders(resp),
-    b: Utilities.base64Encode(resp.getContent())
+    h: headers,
+    c: setCookieArr.length > 0 ? setCookieArr : undefined, // v2.1: explicit Set-Cookie array
+    b: Utilities.base64Encode(resp.getContent()),
+    d: dbg
   };
 }
 
+// _respHeaders returns response headers normalized so the Go client can
+// decode them deterministically:
+//   - Multi-valued headers (notably Set-Cookie) are always arrays.
+//   - Single-valued headers stay strings.
+//
+// Uses a dual-path strategy: calls BOTH getAllHeaders() and getHeaders(),
+// extracts Set-Cookie from each, and takes whichever produced MORE
+// cookies. This guards against getAllHeaders() silently dropping
+// Set-Cookie (observed in some V8 runtime versions) while still
+// benefiting from its proper array support when it works.
+//
+// For non-Set-Cookie headers, getAllHeaders() is preferred since it
+// preserves multi-valued headers as arrays.
 function _respHeaders(resp) {
+  var allH = null, flatH = null;
   try {
-    if (typeof resp.getAllHeaders === "function") return resp.getAllHeaders();
-  } catch (err) {}
-  return resp.getHeaders();
+    if (typeof resp.getAllHeaders === "function") {
+      allH = resp.getAllHeaders();
+    }
+  } catch (e) { /* fall through */ }
+  try {
+    flatH = resp.getHeaders();
+  } catch (e) { /* fall through */ }
+
+  var source = allH || flatH;
+  if (!source) return {};
+
+  var out = {};
+  for (var k in source) {
+    if (!Object.prototype.hasOwnProperty.call(source, k)) continue;
+    var v = source[k];
+    if (k.toLowerCase() === "set-cookie") {
+      // Dual-path: extract from both sources, take the one with more cookies.
+      // Cookie loss is strictly worse than duplication (browser de-duplicates
+      // by name+domain+path).
+      var fromAll = allH ? _splitSetCookie(allH[k]) : [];
+      var fromFlat = flatH ? _splitSetCookie(flatH[k]) : [];
+      out[k] = fromAll.length >= fromFlat.length ? fromAll : fromFlat;
+    } else {
+      out[k] = v;
+    }
+  }
+  // If source lacked a Set-Cookie key, check the other source too.
+  // getAllHeaders() may use different casing than getHeaders().
+  var other = (source === allH) ? flatH : allH;
+  if (other) {
+    for (var ok in other) {
+      if (!Object.prototype.hasOwnProperty.call(other, ok)) continue;
+      if (ok.toLowerCase() === "set-cookie") {
+        var existing = [];
+        for (var ek in out) {
+          if (Object.prototype.hasOwnProperty.call(out, ek) && ek.toLowerCase() === "set-cookie") {
+            existing = out[ek];
+            break;
+          }
+        }
+        var fromOther = _splitSetCookie(other[ok]);
+        if (fromOther.length > (Array.isArray(existing) ? existing.length : 0)) {
+          out[ok] = fromOther;
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// _splitSetCookie normalizes Set-Cookie into an array of individual
+// cookie strings, regardless of the input shape. Handles:
+//   - already an array → returned as-is
+//   - single string with one cookie → wrapped in [string]
+//   - single string with comma-joined cookies → split intelligently
+//     so the comma inside `Expires=Mon, 01 Jan 2030 ...` is preserved.
+//
+// The heuristic: split on commas only when followed by a token=value
+// pattern where the token is NOT a known Set-Cookie attribute (Expires,
+// Max-Age, Path, Domain, SameSite, etc.). This prevents false splits on
+// `Expires=Mon, 01 Jan 2030 00:00:00 GMT` and similar date strings.
+
+var COOKIE_ATTRS = {
+  "expires":1, "max-age":1, "path":1, "domain":1,
+  "samesite":1, "secure":1, "httponly":1, "partitioned":1
+};
+
+function _splitSetCookie(v) {
+  if (v == null) return [];
+  if (Array.isArray(v)) {
+    return v.map(function (x) { return String(x); });
+  }
+  var s = String(v);
+  // Split on ", " only when followed by a token that looks like a
+  // new cookie (`name=...`) and NOT a known cookie attribute.
+  var parts = [];
+  var idx = 0;
+  while (idx < s.length) {
+    // Find the next "comma followed by likely cookie boundary".
+    var nextComma = -1;
+    var probe = idx;
+    while (true) {
+      var c = s.indexOf(",", probe);
+      if (c < 0) break;
+      // After the comma, skip whitespace.
+      var p = c + 1;
+      while (p < s.length && s.charAt(p) === " ") p++;
+      // Look for `name=` where name has no spaces.
+      var eq = s.indexOf("=", p);
+      if (eq > p) {
+        var name = s.substring(p, eq);
+        if (!/[\s,;]/.test(name)) {
+          // If the name is a known Set-Cookie attribute, this comma is
+          // inside the cookie (e.g. Expires date) — not a boundary.
+          if (COOKIE_ATTRS[name.toLowerCase()]) {
+            probe = c + 1;
+            continue;
+          }
+          nextComma = c;
+          break;
+        }
+      }
+      probe = c + 1;
+    }
+    if (nextComma < 0) {
+      parts.push(s.substring(idx).replace(/^\s+|\s+$/g, ""));
+      break;
+    }
+    parts.push(s.substring(idx, nextComma).replace(/^\s+|\s+$/g, ""));
+    idx = nextComma + 1;
+  }
+  return parts.filter(function (x) { return x.length > 0; });
 }
 
 function _validateItem(req) {
