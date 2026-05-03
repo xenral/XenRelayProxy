@@ -22,14 +22,7 @@ env:
 jobs:
   # ─── macOS (arm64 + amd64) ──────────────────────────────────
   build-macos:
-    strategy:
-      matrix:
-        include:
-          - arch: arm64
-            runner: macos-14        # Apple Silicon
-          - arch: amd64
-            runner: macos-13        # Intel
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-14
     steps:
       - uses: actions/checkout@v4
 
@@ -45,7 +38,7 @@ jobs:
         run: go install github.com/wailsapp/wails/v2/cmd/wails@${{ env.WAILS_VERSION }}
 
       - name: Build macOS app
-        run: wails build -platform darwin/${{ matrix.arch }}
+        run: wails build -platform darwin/arm64
 
       - name: Create DMG
         run: |
@@ -57,26 +50,31 @@ jobs:
             --icon-size 100 \
             --app-drop-link 425 178 \
             --icon "${{ env.APP_NAME }}.app" 175 178 \
-            "build/bin/${{ env.APP_NAME }}-macos-${{ matrix.arch }}.dmg" \
+            "build/bin/${{ env.APP_NAME }}-macos-arm64.dmg" \
             "build/bin/${{ env.APP_NAME }}.app" || true
 
       - name: Fallback to zip if DMG fails
         if: always()
         run: |
-          if [ ! -f "build/bin/${{ env.APP_NAME }}-macos-${{ matrix.arch }}.dmg" ]; then
+          if [ ! -f "build/bin/${{ env.APP_NAME }}-macos-arm64.dmg" ]; then
             cd build/bin
-            zip -r "${{ env.APP_NAME }}-macos-${{ matrix.arch }}.zip" "${{ env.APP_NAME }}.app"
+            zip -r "${{ env.APP_NAME }}-macos-arm64.zip" "${{ env.APP_NAME }}.app"
           fi
 
       - uses: actions/upload-artifact@v4
         with:
-          name: macos-${{ matrix.arch }}
+          name: macos-arm64
           path: |
             build/bin/*.dmg
             build/bin/*.zip
 
-  # ─── Windows (amd64) ────────────────────────────────────────
+  # ─── Windows (amd64 + arm64) ────────────────────────────────
   build-windows:
+    strategy:
+      matrix:
+        include:
+          - arch: amd64
+          - arch: arm64
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
@@ -96,14 +94,23 @@ jobs:
         run: choco install nsis -y
 
       - name: Build Windows app with installer
-        run: wails build -platform windows/amd64 -nsis
+        run: wails build -platform windows/${{ matrix.arch }} -nsis
+
+      - name: Rename artifacts with arch suffix
+        shell: bash
+        run: |
+          cd build/bin
+          for f in *-installer.exe; do
+            [ -f "$f" ] && mv "$f" "${f%-installer.exe}-${{ matrix.arch }}-installer.exe"
+          done
+          [ -f "${{ env.APP_NAME }}.exe" ] && mv "${{ env.APP_NAME }}.exe" "${{ env.APP_NAME }}-${{ matrix.arch }}.exe"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: windows-amd64
+          name: windows-${{ matrix.arch }}
           path: |
             build/bin/*-installer.exe
-            build/bin/${{ env.APP_NAME }}.exe
+            build/bin/${{ env.APP_NAME }}-${{ matrix.arch }}.exe
 
   # ─── Linux GUI (amd64) ─────────────────────────────────────
   build-linux:
