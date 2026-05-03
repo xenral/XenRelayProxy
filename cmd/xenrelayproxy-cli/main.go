@@ -13,9 +13,11 @@ import (
 
 func main() {
 	configPath := flag.String("config", "config.json", "Path to config file")
+	caCert := flag.String("ca-cert", "ca/ca.crt", "Path to CA certificate file")
+	caKey := flag.String("ca-key", "ca/ca.key", "Path to CA key file")
 	flag.Parse()
 
-	api := relayvpn.NewAPI(*configPath)
+	api := relayvpn.NewAPI(*configPath, *caCert, *caKey)
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 

@@ -79,10 +79,18 @@ export namespace config {
 	    chunked_download_max_parallel: number;
 	    chunked_download_max_chunks: number;
 	    chunked_download_extensions: string[];
+	    cache_max_bytes: number;
+	    metrics_max_hosts: number;
 	    bypass_hosts: string[];
 	    direct_google_exclude: string[];
 	    direct_google_allow: string[];
 	    sni_rewrite_hosts: string[];
+	    force_relay_sni_hosts: boolean;
+	    inject_permissive_cors: boolean;
+	    cookie_debug_mode: boolean;
+	    cookie_critical_hosts: string[];
+	    direct_tunnel_hosts: string[];
+	    block_long_poll_paths: string[];
 	    block_hosts: string[];
 	    hosts: Record<string, string>;
 	
@@ -118,10 +126,18 @@ export namespace config {
 	        this.chunked_download_max_parallel = source["chunked_download_max_parallel"];
 	        this.chunked_download_max_chunks = source["chunked_download_max_chunks"];
 	        this.chunked_download_extensions = source["chunked_download_extensions"];
+	        this.cache_max_bytes = source["cache_max_bytes"];
+	        this.metrics_max_hosts = source["metrics_max_hosts"];
 	        this.bypass_hosts = source["bypass_hosts"];
 	        this.direct_google_exclude = source["direct_google_exclude"];
 	        this.direct_google_allow = source["direct_google_allow"];
 	        this.sni_rewrite_hosts = source["sni_rewrite_hosts"];
+	        this.force_relay_sni_hosts = source["force_relay_sni_hosts"];
+	        this.inject_permissive_cors = source["inject_permissive_cors"];
+	        this.cookie_debug_mode = source["cookie_debug_mode"];
+	        this.cookie_critical_hosts = source["cookie_critical_hosts"];
+	        this.direct_tunnel_hosts = source["direct_tunnel_hosts"];
+	        this.block_long_poll_paths = source["block_long_poll_paths"];
 	        this.block_hosts = source["block_hosts"];
 	        this.hosts = source["hosts"];
 	    }
@@ -257,6 +273,32 @@ export namespace obs {
 
 export namespace relayvpn {
 	
+	export class CACertInfo {
+	    cert_path: string;
+	    fingerprint: string;
+	    subject: string;
+	    not_before: string;
+	    not_after: string;
+	    exists: boolean;
+	    trusted: boolean;
+	    pem: string;
+	
+	    static createFrom(source: any = {}) {
+	        return new CACertInfo(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.cert_path = source["cert_path"];
+	        this.fingerprint = source["fingerprint"];
+	        this.subject = source["subject"];
+	        this.not_before = source["not_before"];
+	        this.not_after = source["not_after"];
+	        this.exists = source["exists"];
+	        this.trusted = source["trusted"];
+	        this.pem = source["pem"];
+	    }
+	}
 	export class Status {
 	    state: string;
 	    running: boolean;

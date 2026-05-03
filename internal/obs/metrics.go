@@ -5,6 +5,11 @@ import (
 	"time"
 )
 
+// DefaultMaxHosts caps the number of distinct hosts tracked in per-host
+// counters. The cap prevents unbounded memory growth under high-cardinality
+// traffic (e.g. tracker domains, ad networks, randomized CDN hostnames).
+const DefaultMaxHosts = 256
+
 type Metrics struct {
 	mu             sync.Mutex
 	startedAt      time.Time
@@ -13,9 +18,12 @@ type Metrics struct {
 	bytesUp        int64
 	bytesDown      int64
 	lastLatencyMS  float64
+	maxHosts       int
 	hostRequests   map[string]int64
 	hostErrors     map[string]int64
 	hostLatencySum map[string]float64
+	hostLastSeen   map[string]int64
+	tick           int64
 }
 
 type Snapshot struct {
@@ -36,11 +44,34 @@ type HostSnapshot struct {
 }
 
 func NewMetrics() *Metrics {
+	return NewMetricsWithCap(DefaultMaxHosts)
+}
+
+func NewMetricsWithCap(maxHosts int) *Metrics {
+	if maxHosts <= 0 {
+		maxHosts = DefaultMaxHosts
+	}
 	return &Metrics{
 		startedAt:      time.Now(),
+		maxHosts:       maxHosts,
 		hostRequests:   map[string]int64{},
 		hostErrors:     map[string]int64{},
 		hostLatencySum: map[string]float64{},
+		hostLastSeen:   map[string]int64{},
+	}
+}
+
+// SetCap updates the max-hosts cap. If lowered below the current set size,
+// least-recently-seen hosts are evicted to fit.
+func (m *Metrics) SetCap(maxHosts int) {
+	if maxHosts <= 0 {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.maxHosts = maxHosts
+	for len(m.hostRequests) > m.maxHosts {
+		m.evictLRULocked()
 	}
 }
 
@@ -52,16 +83,42 @@ func (m *Metrics) Record(host string, up, down int64, latency time.Duration, err
 	m.bytesDown += down
 	ms := float64(latency.Microseconds()) / 1000
 	m.lastLatencyMS = ms
-	if host != "" {
-		m.hostRequests[host]++
-		m.hostLatencySum[host] += ms
-	}
 	if err != nil {
 		m.totalErrors++
-		if host != "" {
-			m.hostErrors[host]++
+	}
+	if host == "" {
+		return
+	}
+	m.tick++
+	if _, known := m.hostRequests[host]; !known && len(m.hostRequests) >= m.maxHosts {
+		m.evictLRULocked()
+	}
+	m.hostRequests[host]++
+	m.hostLatencySum[host] += ms
+	m.hostLastSeen[host] = m.tick
+	if err != nil {
+		m.hostErrors[host]++
+	}
+}
+
+func (m *Metrics) evictLRULocked() {
+	var oldestHost string
+	var oldestSeen int64
+	first := true
+	for host, seen := range m.hostLastSeen {
+		if first || seen < oldestSeen {
+			oldestHost = host
+			oldestSeen = seen
+			first = false
 		}
 	}
+	if oldestHost == "" {
+		return
+	}
+	delete(m.hostRequests, oldestHost)
+	delete(m.hostErrors, oldestHost)
+	delete(m.hostLatencySum, oldestHost)
+	delete(m.hostLastSeen, oldestHost)
 }
 
 func (m *Metrics) Snapshot() Snapshot {

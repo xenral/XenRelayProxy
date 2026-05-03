@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 
 	"xenrelayproxy/internal/config"
 	"xenrelayproxy/internal/frontscan"
@@ -14,7 +16,26 @@ type App struct {
 }
 
 func NewApp() *App {
-	return &App{api: relayvpn.NewAPI("config.json")}
+	dir := appDataDir()
+	return &App{api: relayvpn.NewAPI(
+		filepath.Join(dir, "config.json"),
+		filepath.Join(dir, "ca", "ca.crt"),
+		filepath.Join(dir, "ca", "ca.key"),
+	)}
+}
+
+// appDataDir returns ~/Library/Application Support/XenRelayProxy on macOS,
+// creating it if needed. Falls back to the cwd on error.
+func appDataDir() string {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "."
+	}
+	dir := filepath.Join(home, "Library", "Application Support", "XenRelayProxy")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return "."
+	}
+	return dir
 }
 
 func (a *App) startup(ctx context.Context) {
@@ -72,4 +93,12 @@ func (a *App) ScanFrontIPs() ([]frontscan.Result, error) {
 
 func (a *App) ToggleAccount(label string, enabled bool) error {
 	return a.api.ToggleAccount(label, enabled)
+}
+
+func (a *App) GetCACertInfo() relayvpn.CACertInfo {
+	return a.api.GetCACertInfo()
+}
+
+func (a *App) RevealCACert() error {
+	return a.api.RevealCACert()
 }

@@ -1,6 +1,8 @@
 package mitm
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -77,7 +79,11 @@ func (m *Manager) CertificateFor(host string) (*tls.Certificate, error) {
 	}
 	m.mu.Unlock()
 
-	key, err := rsa.GenerateKey(rand.Reader, rsaKeyBits)
+	// ECDSA P-256 leaf keys are ~10x faster to generate than RSA-2048,
+	// which is the dominant cost on first CONNECT to a new host. The CA
+	// signs them with its existing RSA key — mixed-algorithm chains are
+	// fine for all major TLS clients.
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
 		return nil, err
 	}
@@ -92,7 +98,7 @@ func (m *Manager) CertificateFor(host string) (*tls.Certificate, error) {
 		},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(leafValidity),
-		KeyUsage:              x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		KeyUsage:              x509.KeyUsageDigitalSignature,
 		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageServerAuth},
 		BasicConstraintsValid: true,
 	}
@@ -105,8 +111,12 @@ func (m *Manager) CertificateFor(host string) (*tls.Certificate, error) {
 	if err != nil {
 		return nil, err
 	}
+	keyDER, err := x509.MarshalECPrivateKey(key)
+	if err != nil {
+		return nil, err
+	}
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	keyPEM := pem.EncodeToMemory(&pem.Block{Type: "EC PRIVATE KEY", Bytes: keyDER})
 	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
 	if err != nil {
 		return nil, err

@@ -5,6 +5,7 @@ import (
 	"encoding/pem"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 )
 
@@ -35,12 +36,24 @@ func IsTrusted(certFile string) bool {
 func Install(certFile string) error {
 	switch runtime.GOOS {
 	case "darwin":
-		return exec.Command("security", "add-trusted-cert", "-d", "-r", "trustRoot", "-k", "/Library/Keychains/System.keychain", certFile).Run()
+		// Add to the user login keychain — no admin/sudo required.
+		// Chrome, Safari, and macOS apps trust it immediately.
+		// Firefox uses its own NSS store; use the Certificate screen for manual steps.
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		kc := filepath.Join(home, "Library", "Keychains", "login.keychain-db")
+		return exec.Command("security", "add-trusted-cert",
+			"-r", "trustRoot",
+			"-k", kc,
+			certFile,
+		).Run()
 	case "windows":
-		return exec.Command("certutil", "-addstore", "-f", "Root", certFile).Run()
+		return exec.Command("certutil", "-addstore", "-user", "-f", "Root", certFile).Run()
 	case "linux":
 		target := "/usr/local/share/ca-certificates/xenrelayproxy.crt"
-		if err := exec.Command("cp", certFile, target).Run(); err != nil {
+		if err := copyFile(certFile, target); err != nil {
 			return err
 		}
 		return exec.Command("update-ca-certificates").Run()
@@ -52,13 +65,39 @@ func Install(certFile string) error {
 func Uninstall(certFile string) error {
 	switch runtime.GOOS {
 	case "darwin":
-		return exec.Command("security", "remove-trusted-cert", "-d", certFile).Run()
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return err
+		}
+		kc := filepath.Join(home, "Library", "Keychains", "login.keychain-db")
+		return exec.Command("security", "remove-trusted-cert", "-k", kc, certFile).Run()
 	case "windows":
-		return exec.Command("certutil", "-delstore", "Root", "XenRelayProxy Local MITM Root").Run()
+		return exec.Command("certutil", "-delstore", "-user", "Root", "XenRelayProxy Local MITM Root").Run()
 	case "linux":
 		_ = os.Remove("/usr/local/share/ca-certificates/xenrelayproxy.crt")
 		return exec.Command("update-ca-certificates").Run()
 	default:
 		return nil
 	}
+}
+
+// Reveal opens the directory containing certFile in the platform file manager.
+func Reveal(certFile string) error {
+	dir := filepath.Dir(certFile)
+	switch runtime.GOOS {
+	case "darwin":
+		return exec.Command("open", dir).Run()
+	case "windows":
+		return exec.Command("explorer", dir).Run()
+	default:
+		return exec.Command("xdg-open", dir).Run()
+	}
+}
+
+func copyFile(src, dst string) error {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(dst, data, 0o644)
 }

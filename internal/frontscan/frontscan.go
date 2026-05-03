@@ -104,13 +104,17 @@ func Scan(ctx context.Context, frontDomain string, ips []string) ([]Result, erro
 }
 
 func probe(ctx context.Context, frontDomain, ip string) Result {
-	start := time.Now()
-	dialer := &net.Dialer{Timeout: 4 * time.Second, KeepAlive: 30 * time.Second}
-	conn, err := tls.DialWithDialer(dialer, "tcp", net.JoinHostPort(ip, "443"), &tls.Config{
+	return probeWithConfig(ctx, ip, "443", &tls.Config{
 		ServerName: frontDomain,
 		MinVersion: tls.VersionTLS12,
 		NextProtos: []string{"h2", "http/1.1"},
 	})
+}
+
+func probeWithConfig(ctx context.Context, ip, port string, tlsCfg *tls.Config) Result {
+	start := time.Now()
+	dialer := &net.Dialer{Timeout: 4 * time.Second, KeepAlive: 30 * time.Second}
+	conn, err := tls.DialWithDialer(dialer, "tcp", net.JoinHostPort(ip, port), tlsCfg)
 	if err != nil {
 		return Result{IP: ip, OK: false, Error: err.Error()}
 	}

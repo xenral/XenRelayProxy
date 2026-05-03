@@ -2,9 +2,14 @@ package relayvpn
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/x509"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"log/slog"
+	"os"
+	"strings"
 	"sync"
 	"time"
 
@@ -25,6 +30,8 @@ type EventSink func(event string, payload any)
 type API struct {
 	mu         sync.Mutex
 	configPath string
+	caCertFile string
+	caKeyFile  string
 	cfg        config.Config
 	status     Status
 	metrics    *obs.Metrics
@@ -57,16 +64,36 @@ type Stats struct {
 	Logs      []obs.Entry     `json:"logs"`
 }
 
-const Version = "0.1.0"
+const Version = "0.2.0"
 
-func NewAPI(configPath string) *API {
+// CACertInfo holds metadata about the local MITM CA certificate.
+type CACertInfo struct {
+	CertPath    string `json:"cert_path"`
+	Fingerprint string `json:"fingerprint"`
+	Subject     string `json:"subject"`
+	NotBefore   string `json:"not_before"`
+	NotAfter    string `json:"not_after"`
+	Exists      bool   `json:"exists"`
+	Trusted     bool   `json:"trusted"`
+	PEM         string `json:"pem"`
+}
+
+func NewAPI(configPath, caCertFile, caKeyFile string) *API {
 	if configPath == "" {
 		configPath = "config.json"
+	}
+	if caCertFile == "" {
+		caCertFile = mitm.DefaultCACertFile
+	}
+	if caKeyFile == "" {
+		caKeyFile = mitm.DefaultCAKeyFile
 	}
 	logs := obs.NewRing(1000)
 	api := &API{
 		configPath: configPath,
-		metrics:    obs.NewMetrics(),
+		caCertFile: caCertFile,
+		caKeyFile:  caKeyFile,
+		metrics:    obs.NewMetricsWithCap(obs.DefaultMaxHosts),
 		logs:       logs,
 		status: Status{
 			State:      "DISCONNECTED",
@@ -111,7 +138,8 @@ func (a *API) Start(ctx context.Context) error {
 	if cfg.LANSharing && cfg.ListenHost == "127.0.0.1" {
 		cfg.ListenHost = "0.0.0.0"
 	}
-	mitmMgr, err := mitm.NewManager(mitm.DefaultCACertFile, mitm.DefaultCAKeyFile)
+	a.metrics.SetCap(cfg.MetricsMaxHosts)
+	mitmMgr, err := mitm.NewManager(a.caCertFile, a.caKeyFile)
 	if err != nil {
 		a.setError(err)
 		return err
@@ -219,6 +247,12 @@ func (a *API) Stats() Stats {
 
 func (a *API) GetConfig() (config.Config, error) {
 	cfg, err := config.Load(a.configPath)
+	if os.IsNotExist(err) {
+		// No config file yet — return defaults so the UI can populate the form.
+		var dflt config.Config
+		dflt.SetDefaults()
+		return dflt, nil
+	}
 	if err != nil {
 		return config.Config{}, err
 	}
@@ -226,14 +260,9 @@ func (a *API) GetConfig() (config.Config, error) {
 }
 
 func (a *API) SaveConfig(cfg config.Config) error {
-	cfg.SetDefaults()
-	if err := cfg.Normalize(); err != nil {
-		return err
-	}
-	if err := cfg.Validate(); err != nil {
-		return err
-	}
-	if err := config.Save(a.configPath, cfg); err != nil {
+	// Use SaveDraft so partial configs (e.g. auth_key not yet set) persist
+	// immediately. Validation is enforced at Start() time.
+	if err := config.SaveDraft(a.configPath, cfg); err != nil {
 		return err
 	}
 	a.logs.Add(obs.LevelInfo, "config", "configuration saved")
@@ -317,6 +346,43 @@ func (a *API) ToggleAccount(label string, enabled bool) error {
 	return nil
 }
 
+func (a *API) GetCACertInfo() CACertInfo {
+	info := CACertInfo{CertPath: a.caCertFile}
+	// Ensure the CA exists on disk (creates it on first call).
+	if _, err := a.ensureCA(); err != nil {
+		return info
+	}
+	data, err := os.ReadFile(a.caCertFile)
+	if err != nil {
+		return info
+	}
+	info.Exists = true
+	info.PEM = string(data)
+	block, _ := pem.Decode(data)
+	if block == nil {
+		return info
+	}
+	cert, err := x509.ParseCertificate(block.Bytes)
+	if err != nil {
+		return info
+	}
+	sum := sha256.Sum256(cert.Raw)
+	var pairs []string
+	for _, b := range sum[:] {
+		pairs = append(pairs, fmt.Sprintf("%02X", b))
+	}
+	info.Fingerprint = strings.Join(pairs, ":")
+	info.Subject = cert.Subject.CommonName
+	info.NotBefore = cert.NotBefore.Format("2006-01-02")
+	info.NotAfter = cert.NotAfter.Format("2006-01-02")
+	info.Trusted = certstore.IsTrusted(a.caCertFile)
+	return info
+}
+
+func (a *API) RevealCACert() error {
+	return certstore.Reveal(a.caCertFile)
+}
+
 func (a *API) ensureCA() (*mitm.Manager, error) {
 	a.mu.Lock()
 	if a.mitm != nil {
@@ -325,7 +391,7 @@ func (a *API) ensureCA() (*mitm.Manager, error) {
 		return mgr, nil
 	}
 	a.mu.Unlock()
-	mgr, err := mitm.NewManager(mitm.DefaultCACertFile, mitm.DefaultCAKeyFile)
+	mgr, err := mitm.NewManager(a.caCertFile, a.caKeyFile)
 	if err != nil {
 		return nil, err
 	}

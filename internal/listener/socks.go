@@ -67,11 +67,7 @@ func (s *Server) handleSOCKS(conn net.Conn) {
 		s.directTunnel(target, conn, br)
 		return
 	}
-	mode := MITMRelay
-	if s.router.ShouldSNIRewrite(host) {
-		mode = MITMSNIRewrite
-	}
-	s.handleMITMStream(host, port, conn, mode)
+	s.handleMITMStream(host, port, conn, s.mitmModeFor(host))
 }
 
 func socksHandshake(r *bufio.Reader, w io.Writer) error {

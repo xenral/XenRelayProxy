@@ -58,6 +58,8 @@
     "translate.google.com"
   ],
   "direct_google_allow": ["www.google.com", "google.com", "safebrowsing.google.com"],
+  "force_relay_sni_hosts": false,
+  "inject_permissive_cors": false,
   "sni_rewrite_hosts": [
     "youtube.com",
     "youtu.be",

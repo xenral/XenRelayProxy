@@ -50,9 +50,9 @@ func NewClient(cfg config.Config, sched *scheduler.Scheduler, metrics *obs.Metri
 	c.http = &http.Client{
 		Transport: c.transport(),
 		Timeout:   time.Duration(cfg.RelayTimeout) * time.Second,
-		CheckRedirect: func(req *http.Request, via []*http.Request) error {
-			return http.ErrUseLastResponse
-		},
+		// Allow redirects — Apps Script POST /exec issues a 302 before the
+		// actual response. Blocking redirects returns an HTML page which
+		// cannot be parsed as JSON (the "invalid character '<'" error).
 	}
 	return c
 }
@@ -191,7 +191,62 @@ func (c *Client) postJSON(ctx context.Context, account *scheduler.Account, paylo
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return body, fmt.Errorf("unauthorized: relay HTTP %d", resp.StatusCode)
 	}
+	if resp.StatusCode >= 300 || looksLikeHTML(body) {
+		// Apps Script returns HTML (Drive landing, login, or error pages)
+		// when the deployment URL is wrong or its access settings are
+		// misconfigured. Most users hit this after redeploying via "New
+		// deployment" instead of "Manage deployments → New version".
+		if looksLikeDeploymentMissingPage(body) {
+			return body, fmt.Errorf(
+				"apps script deployment not found (HTTP %d) — your script_id likely points to a deleted/orphaned deployment. "+
+					"Open Apps Script → Deploy → Manage deployments → copy the URL of the active deployment and update Script Deployment ID in Settings → Accounts. "+
+					"Tip: redeploy with 'Manage deployments → ✏️ → Version: New version' to keep the same URL",
+				resp.StatusCode)
+		}
+		if resp.StatusCode >= 300 {
+			return body, fmt.Errorf("relay HTTP %d (unexpected redirect): %s", resp.StatusCode, stringPrefix(body, 120))
+		}
+		return body, fmt.Errorf(
+			"apps script returned HTML instead of JSON — verify: deployment type=Web app, Execute as=Me, Who has access=Anyone (got: %s)",
+			stringPrefix(body, 120))
+	}
 	return body, nil
+}
+
+// looksLikeDeploymentMissingPage detects Apps Script's "deployment not
+// found" / Drive soft-404 landing page, which is served in the user's
+// locale and contains marketing copy about Docs/Sheets. Pinpointing it
+// lets us turn a confusing "unexpected redirect" error into a clear
+// "your deployment ID is wrong" hint.
+func looksLikeDeploymentMissingPage(body []byte) bool {
+	if !looksLikeHTML(body) {
+		return false
+	}
+	low := bytes.ToLower(body)
+	// Each phrase appears in Apps Script's deployment-missing landing,
+	// localized to the user's Google account language.
+	hints := [][]byte{
+		// English
+		[]byte("script.google.com"),
+		[]byte("workspace"),
+		// German (the user's case)
+		[]byte("textverarbeitung"),
+		[]byte("präsentationen"),
+		// Spanish
+		[]byte("procesador de texto"),
+		// French
+		[]byte("traitement de texte"),
+		// Generic Apps Script error pages
+		[]byte("requested entity was not found"),
+		[]byte("page not found"),
+	}
+	matches := 0
+	for _, hint := range hints {
+		if bytes.Contains(low, hint) {
+			matches++
+		}
+	}
+	return matches >= 1
 }
 
 func (c *Client) endpoint(scriptID string) string {
@@ -292,4 +347,9 @@ func stringPrefix(data []byte, n int) string {
 		return string(data)
 	}
 	return string(data[:n])
+}
+
+func looksLikeHTML(data []byte) bool {
+	t := bytes.TrimSpace(data)
+	return bytes.HasPrefix(t, []byte("<")) || bytes.HasPrefix(bytes.ToUpper(t), []byte("<!DOCTYPE"))
 }
