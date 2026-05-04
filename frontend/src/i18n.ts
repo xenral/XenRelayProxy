@@ -197,6 +197,13 @@ const en: Strings = {
   "about.stats": "Stats",
   "about.statsThrough": "through the proxy",
 
+  // Downloads
+  "dl.title": "Downloads",
+  "dl.active": "active",
+  "dl.chunks": "chunks",
+  "dl.complete": "Complete",
+  "dl.failed": "Failed",
+
   // Errors
   "error.boundary.title": "Something went wrong",
   "error.boundary.retry": "Try again",
@@ -394,6 +401,13 @@ const fa: Strings = {
   "about.socks5Proxy": "پروکسی SOCKS5",
   "about.stats": "آمار",
   "about.statsThrough": "از طریق پروکسی",
+
+  // Downloads
+  "dl.title": "دانلودها",
+  "dl.active": "فعال",
+  "dl.chunks": "قطعه",
+  "dl.complete": "تکمیل",
+  "dl.failed": "ناموفق",
 
   // Errors
   "error.boundary.title": "خطایی رخ داد",

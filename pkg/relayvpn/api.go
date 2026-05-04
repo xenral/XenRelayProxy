@@ -36,6 +36,7 @@ type API struct {
 	status     Status
 	metrics    *obs.Metrics
 	logs       *obs.Ring
+	downloads  *obs.Downloads
 	events     EventSink
 
 	sched  *scheduler.Scheduler
@@ -58,10 +59,11 @@ type Status struct {
 }
 
 type Stats struct {
-	Status    Status          `json:"status"`
-	Metrics   obs.Snapshot    `json:"metrics"`
-	Scheduler scheduler.Stats `json:"scheduler"`
-	Logs      []obs.Entry     `json:"logs"`
+	Status    Status              `json:"status"`
+	Metrics   obs.Snapshot        `json:"metrics"`
+	Scheduler scheduler.Stats     `json:"scheduler"`
+	Logs      []obs.Entry         `json:"logs"`
+	Downloads []obs.DownloadEntry `json:"downloads"`
 }
 
 const Version = "0.2.0"
@@ -89,12 +91,14 @@ func NewAPI(configPath, caCertFile, caKeyFile string) *API {
 		caKeyFile = mitm.DefaultCAKeyFile
 	}
 	logs := obs.NewRing(1000)
+	dl := obs.NewDownloads()
 	api := &API{
 		configPath: configPath,
 		caCertFile: caCertFile,
 		caKeyFile:  caKeyFile,
 		metrics:    obs.NewMetricsWithCap(obs.DefaultMaxHosts),
 		logs:       logs,
+		downloads:  dl,
 		status: Status{
 			State:      "DISCONNECTED",
 			ConfigPath: configPath,
@@ -152,7 +156,7 @@ func (a *API) Start(ctx context.Context) error {
 		return err
 	}
 	relayClient := relay.NewClient(cfg, sched, a.metrics, log)
-	server := listener.NewServer(cfg, relayClient, mitmMgr, sched, a.metrics, a.logs, log)
+	server := listener.NewServer(cfg, relayClient, mitmMgr, sched, a.metrics, a.logs, log, a.downloads)
 	runCtx, cancel := context.WithCancel(ctx)
 	if err := server.Start(runCtx); err != nil {
 		cancel()
@@ -242,6 +246,7 @@ func (a *API) Stats() Stats {
 		Metrics:   a.metrics.Snapshot(),
 		Scheduler: schedStats,
 		Logs:      a.logs.Tail(250),
+		Downloads: a.downloads.Snapshot(),
 	}
 }
 
@@ -413,8 +418,11 @@ func (a *API) setError(err error) {
 
 func (a *API) emit(event string, payload any) {
 	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.emitLocked(event, payload)
+	sink := a.events
+	a.mu.Unlock()
+	if sink != nil {
+		sink(event, payload)
+	}
 }
 
 func (a *API) emitLocked(event string, payload any) {

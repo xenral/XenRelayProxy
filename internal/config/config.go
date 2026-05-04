@@ -176,7 +176,7 @@ func (c *Config) SetDefaults() {
 		c.MaxRequestBodyBytes = 100 * 1024 * 1024
 	}
 	if c.MaxResponseBodyBytes == 0 {
-		c.MaxResponseBodyBytes = 200 * 1024 * 1024
+		c.MaxResponseBodyBytes = 5 * 1024 * 1024 * 1024 // 5 GB
 	}
 	if c.DownloadMinSize == 0 {
 		c.DownloadMinSize = 5 * 1024 * 1024

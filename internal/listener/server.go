@@ -46,6 +46,7 @@ type Server struct {
 	log       *slog.Logger
 	router    Router
 	cache     *cache.Cache
+	downloads *obs.Downloads
 
 	httpServer *http.Server
 	httpLn     net.Listener
@@ -54,7 +55,7 @@ type Server struct {
 	wg         sync.WaitGroup
 }
 
-func NewServer(cfg config.Config, relay Relay, mitmMgr *mitm.Manager, sched *scheduler.Scheduler, metrics *obs.Metrics, logs *obs.Ring, log *slog.Logger) *Server {
+func NewServer(cfg config.Config, relay Relay, mitmMgr *mitm.Manager, sched *scheduler.Scheduler, metrics *obs.Metrics, logs *obs.Ring, log *slog.Logger, dl *obs.Downloads) *Server {
 	if metrics == nil {
 		metrics = obs.NewMetrics()
 	}
@@ -63,6 +64,9 @@ func NewServer(cfg config.Config, relay Relay, mitmMgr *mitm.Manager, sched *sch
 	}
 	if log == nil {
 		log = slog.Default()
+	}
+	if dl == nil {
+		dl = obs.NewDownloads()
 	}
 	return &Server{
 		cfg:       cfg,
@@ -74,6 +78,7 @@ func NewServer(cfg config.Config, relay Relay, mitmMgr *mitm.Manager, sched *sch
 		log:       log,
 		router:    NewRouter(cfg),
 		cache:     cache.New(cfg.CacheMaxBytes),
+		downloads: dl,
 	}
 }
 
@@ -135,6 +140,8 @@ func (s *Server) Stop(ctx context.Context) error {
 		return ctx.Err()
 	}
 }
+
+func (s *Server) Downloads() *obs.Downloads { return s.downloads }
 
 func (s *Server) handleHTTPProxy(w http.ResponseWriter, req *http.Request) {
 	if req.Method == http.MethodConnect {
@@ -212,13 +219,13 @@ func (s *Server) handleMITMStream(host, port string, raw net.Conn, mode MITMMode
 		req, err := http.ReadRequest(reader)
 		if err != nil {
 			if !errors.Is(err, io.EOF) {
-				s.logs.Add(obs.LevelDebug, "mitm", "read request failed: "+err.Error())
+				s.logs.Add(obs.LevelWarn, "mitm", "read request failed: "+err.Error())
 			}
 			return
 		}
 		s.absoluteRequestURL(req, host, port)
 		if err := s.writeRequestResponse(tlsConn, req, mode); err != nil {
-			s.logs.Add(obs.LevelDebug, "mitm", "write response failed: "+err.Error())
+			s.logs.Add(obs.LevelWarn, "mitm", "write response failed for "+req.URL.String()+": "+err.Error())
 			return
 		}
 		if shouldClose(req.Header) {
@@ -228,6 +235,22 @@ func (s *Server) handleMITMStream(host, port string, raw net.Conn, mode MITMMode
 }
 
 func (s *Server) writeRequestResponse(conn net.Conn, req *http.Request, mode MITMMode) error {
+	// Try streaming download first (MITM relay path only).
+	if mode == MITMRelay {
+		sw := &rawConnWriter{w: conn}
+		if handled, err := s.tryStreamDownload(req, sw); handled {
+			if err != nil {
+				resp := errorResponse(req, err, http.StatusBadGateway)
+				if origin := req.Header.Get("Origin"); origin != "" {
+					ensureCORS(resp.Header, origin)
+				}
+				defer resp.Body.Close()
+				return resp.Write(conn)
+			}
+			return nil
+		}
+	}
+
 	var resp *http.Response
 	var err error
 	if mode == MITMSNIRewrite {
@@ -253,6 +276,21 @@ func (s *Server) writeRequestResponse(conn net.Conn, req *http.Request, mode MIT
 }
 
 func (s *Server) serveRelayed(w http.ResponseWriter, req *http.Request) {
+	// Try streaming download first.
+	sw := &httpResponseWriterAdapter{w: w}
+	if handled, err := s.tryStreamDownload(req, sw); handled {
+		if err != nil && !sw.written {
+			status := http.StatusBadGateway
+			if origin := req.Header.Get("Origin"); origin != "" {
+				w.Header().Set("Access-Control-Allow-Origin", origin)
+				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				w.Header().Set("Vary", "Origin")
+			}
+			http.Error(w, err.Error(), status)
+		}
+		return
+	}
+
 	resp, err := s.responseFor(req)
 	if err != nil {
 		status := http.StatusBadGateway
@@ -298,15 +336,6 @@ func (s *Server) responseFor(req *http.Request) (*http.Response, error) {
 		return longPollFastFailResponse(req), nil
 	}
 
-	if resp, handled, err := s.tryChunkedDownload(req); handled {
-		if err != nil {
-			s.metrics.Record(host, 0, 0, time.Since(start), err)
-			return nil, err
-		}
-		s.metrics.Record(host, 0, resp.ContentLength, time.Since(start), nil)
-		return resp, nil
-	}
-
 	if cache.Cacheable(req) {
 		if cached, ok := s.cache.Get(req.URL.String()); ok {
 			s.metrics.Record(host, 0, cached.ContentLength, time.Since(start), nil)
@@ -326,11 +355,13 @@ func (s *Server) responseFor(req *http.Request) (*http.Response, error) {
 	body, err := io.ReadAll(io.LimitReader(resp.Body, s.cfg.MaxResponseBodyBytes+1))
 	_ = resp.Body.Close()
 	if err != nil {
+		s.logs.Add(obs.LevelError, "relay", fmt.Sprintf("%s %s → body read error: %s", req.Method, req.URL.String(), err.Error()))
 		s.metrics.Record(host, 0, 0, time.Since(start), err)
 		return nil, err
 	}
 	if int64(len(body)) > s.cfg.MaxResponseBodyBytes {
-		err := fmt.Errorf("relay response too large")
+		err := fmt.Errorf("relay response too large: %d bytes", len(body))
+		s.logs.Add(obs.LevelError, "relay", fmt.Sprintf("%s %s → %s", req.Method, req.URL.String(), err.Error()))
 		s.metrics.Record(host, 0, 0, time.Since(start), err)
 		return nil, err
 	}

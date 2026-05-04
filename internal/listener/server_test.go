@@ -31,7 +31,7 @@ func (fakeRelay) Do(ctx context.Context, req *http.Request) (*http.Response, err
 
 func TestPlainHTTPRelaysAbsoluteURL(t *testing.T) {
 	cfg := config.Config{ListenHost: "127.0.0.1", ListenPort: 18085, MaxResponseBodyBytes: 1024 * 1024}
-	s := NewServer(cfg, fakeRelay{}, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil)
+	s := NewServer(cfg, fakeRelay{}, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/path", nil)
 	w := httptest.NewRecorder()
 	s.handleHTTPProxy(w, req)
@@ -52,7 +52,7 @@ func TestCORSPassThroughByDefault(t *testing.T) {
 		allowOrigin:      "https://allowed.example",
 		allowCredentials: "true",
 	}
-	s := NewServer(cfg, upstreamCORS, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil)
+	s := NewServer(cfg, upstreamCORS, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/auth", nil)
 	req.Header.Set("Origin", "https://attacker.example")
 	w := httptest.NewRecorder()
@@ -74,7 +74,7 @@ func TestCORSPermissiveOverrideOptIn(t *testing.T) {
 		allowOrigin:      "https://allowed.example",
 		allowCredentials: "true",
 	}
-	s := NewServer(cfg, upstreamCORS, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil)
+	s := NewServer(cfg, upstreamCORS, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/auth", nil)
 	req.Header.Set("Origin", "https://app.example")
 	w := httptest.NewRecorder()
@@ -98,7 +98,7 @@ func TestSetCookiePassThrough(t *testing.T) {
 			"csrf=xyz; Path=/; SameSite=Lax",
 		},
 	}
-	s := NewServer(cfg, upstream, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil)
+	s := NewServer(cfg, upstream, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/login", nil)
 	w := httptest.NewRecorder()
 	s.handleHTTPProxy(w, req)
@@ -146,7 +146,7 @@ func (u upstreamWithSetCookies) Do(_ context.Context, req *http.Request) (*http.
 
 func TestCORSPreflight(t *testing.T) {
 	cfg := config.Config{MaxResponseBodyBytes: 1024 * 1024}
-	s := NewServer(cfg, fakeRelay{}, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil)
+	s := NewServer(cfg, fakeRelay{}, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil, nil)
 	req := httptest.NewRequest(http.MethodOptions, "http://example.com/path", nil)
 	req.Header.Set("Origin", "https://app.example")
 	req.Header.Set("Access-Control-Request-Method", "POST")
@@ -162,7 +162,7 @@ func TestCORSPreflight(t *testing.T) {
 
 func TestStatsEndpoint(t *testing.T) {
 	cfg := config.Config{MaxResponseBodyBytes: 1024 * 1024}
-	s := NewServer(cfg, fakeRelay{}, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil)
+	s := NewServer(cfg, fakeRelay{}, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "http://_proxy_stats/", nil)
 	w := httptest.NewRecorder()
 	s.handleHTTPProxy(w, req)
@@ -216,7 +216,7 @@ func TestLongPollFastFail(t *testing.T) {
 	}
 	relayed := false
 	relay := relayHook{onDo: func() { relayed = true }}
-	s := NewServer(cfg, relay, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil)
+	s := NewServer(cfg, relay, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "http://api.x.com/live_pipeline/events?topic=foo", nil)
 	w := httptest.NewRecorder()
 	s.handleHTTPProxy(w, req)
@@ -235,7 +235,7 @@ func TestNonLongPollPathStillRelays(t *testing.T) {
 	}
 	relayed := false
 	relay := relayHook{onDo: func() { relayed = true }}
-	s := NewServer(cfg, relay, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil)
+	s := NewServer(cfg, relay, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "http://x.com/home", nil)
 	w := httptest.NewRecorder()
 	s.handleHTTPProxy(w, req)
@@ -261,7 +261,7 @@ func (r relayHook) Do(_ context.Context, req *http.Request) (*http.Response, err
 
 func TestMITMModeForSNIRewriteHost(t *testing.T) {
 	cfg := config.Config{SNIRewriteHosts: []string{"youtube.com"}}
-	s := NewServer(cfg, fakeRelay{}, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil)
+	s := NewServer(cfg, fakeRelay{}, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil, nil)
 	if got := s.mitmModeFor("www.youtube.com"); got != MITMSNIRewrite {
 		t.Fatalf("expected MITMSNIRewrite for youtube, got %v", got)
 	}
@@ -275,7 +275,7 @@ func TestMITMModeForForceRelayOverride(t *testing.T) {
 		SNIRewriteHosts:    []string{"youtube.com"},
 		ForceRelaySNIHosts: true,
 	}
-	s := NewServer(cfg, fakeRelay{}, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil)
+	s := NewServer(cfg, fakeRelay{}, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil, nil)
 	if got := s.mitmModeFor("www.youtube.com"); got != MITMRelay {
 		t.Fatalf("force_relay_sni_hosts should send youtube via relay, got %v", got)
 	}
@@ -294,7 +294,7 @@ func TestChunkedDownload(t *testing.T) {
 		TLSConnectTimeout:    1,
 		RelayTimeout:         1,
 	}
-	s := NewServer(cfg, rangeRelay{data: data}, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil)
+	s := NewServer(cfg, rangeRelay{data: data}, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/file.bin", nil)
 	w := httptest.NewRecorder()
 	s.handleHTTPProxy(w, req)
@@ -325,7 +325,7 @@ func TestCookieDeletionHeadersPreserved(t *testing.T) {
 			"csrf=; Max-Age=0; Path=/",
 		},
 	}
-	s := NewServer(cfg, upstream, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil)
+	s := NewServer(cfg, upstream, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/logout", nil)
 	w := httptest.NewRecorder()
 	s.handleHTTPProxy(w, req)
@@ -351,7 +351,7 @@ func TestSetCookieWithExpiresCommaPreserved(t *testing.T) {
 			"prefs=dark; Expires=Fri, 31 Dec 2027 23:59:59 GMT; Path=/",
 		},
 	}
-	s := NewServer(cfg, upstream, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil)
+	s := NewServer(cfg, upstream, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/login", nil)
 	w := httptest.NewRecorder()
 	s.handleHTTPProxy(w, req)
@@ -371,7 +371,7 @@ func TestSetCookieWithExpiresCommaPreserved(t *testing.T) {
 func TestDebugHeaderStrippedFromResponse(t *testing.T) {
 	cfg := config.Config{MaxResponseBodyBytes: 1024 * 1024}
 	upstream := upstreamWithDebugHeader{}
-	s := NewServer(cfg, upstream, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil)
+	s := NewServer(cfg, upstream, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil, nil)
 	req := httptest.NewRequest(http.MethodGet, "http://example.com/path", nil)
 	w := httptest.NewRecorder()
 	s.handleHTTPProxy(w, req)
@@ -399,7 +399,7 @@ func (upstreamWithDebugHeader) Do(_ context.Context, req *http.Request) (*http.R
 // cookie_critical_hosts entries should be routed via SNI-rewrite.
 func TestCookieCriticalHostsRouteViaSNIRewrite(t *testing.T) {
 	cfg := config.Config{CookieCriticalHosts: []string{"login.example.com"}}
-	s := NewServer(cfg, fakeRelay{}, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil)
+	s := NewServer(cfg, fakeRelay{}, nil, nil, obs.NewMetrics(), obs.NewRing(10), nil, nil)
 	if got := s.mitmModeFor("login.example.com"); got != MITMSNIRewrite {
 		t.Fatalf("cookie_critical_hosts should use SNI rewrite, got %v", got)
 	}

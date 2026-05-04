@@ -58,6 +58,15 @@ type Stats = {
     }[];
   };
   logs: { time: string; level: string; source?: string; message: string }[];
+  downloads: DownloadInfo[];
+};
+
+type DownloadInfo = {
+  id: string; url: string; filename: string;
+  total_bytes: number; done_bytes: number;
+  chunks: number; done_chunks: number;
+  status: "active" | "done" | "failed";
+  error?: string; started_at: string; bytes_per_sec: number;
 };
 
 type ScanResult = { ip: string; rtt_ms: number; ok: boolean; error?: string; recommend: boolean };
@@ -105,7 +114,7 @@ async function call<T>(name: string, ...args: unknown[]): Promise<T> {
     if (name === "Status")
       return { state: "DISCONNECTED", running: false, listen_address: "127.0.0.1:8085", socks5_address: "", ca_trusted: false, version: "dev" } as T;
     if (name === "Stats")
-      return { status: await call<Status>("Status"), metrics: { total_requests: 0, total_errors: 0, bytes_up: 0, bytes_down: 0, last_latency_ms: 0 }, scheduler: { strategy: "least_loaded", total_daily_quota: 0, total_calls_today: 0, accounts: [] }, logs: [] } as T;
+      return { status: await call<Status>("Status"), metrics: { total_requests: 0, total_errors: 0, bytes_up: 0, bytes_down: 0, last_latency_ms: 0 }, scheduler: { strategy: "least_loaded", total_daily_quota: 0, total_calls_today: 0, accounts: [] }, logs: [], downloads: [] } as T;
     if (name === "GetConfig") return BLANK_CONFIG as T;
     if (name === "ScanFrontIPs") return [] as T;
     if (name === "GetCACertInfo") return { cert_path: "", fingerprint: "", subject: "", not_before: "", not_after: "", exists: false, trusted: false, pem: "" } as T;
@@ -430,6 +439,42 @@ function HomeView({ status, stats, onConnect, connecting }: {
           tone={totalReq === 0 ? "muted" : successPct >= 95 ? "success" : successPct >= 70 ? "warn" : "danger"}
         />
       </section>
+
+      {(stats?.downloads ?? []).length > 0 && (
+        <section className="downloads-panel">
+          <div className="panel-head">
+            <ArrowDown size={14} /><span>{t("dl.title")}</span>
+            <em className="panel-pill">{stats!.downloads.filter(d => d.status === "active").length} {t("dl.active")}</em>
+          </div>
+          <div className="dl-list">
+            {(stats?.downloads ?? []).map(dl => (
+              <div key={dl.id} className={`dl-item dl-${dl.status}`}>
+                <div className="dl-row">
+                  <span className="dl-name" title={dl.url}>{dl.filename}</span>
+                  <span className="dl-size">
+                    {fmtBytes(dl.done_bytes)} / {fmtBytes(dl.total_bytes)}
+                  </span>
+                </div>
+                <div className="dl-bar-track">
+                  <div
+                    className={`dl-bar-fill dl-bar-${dl.status}`}
+                    style={{ width: `${dl.total_bytes > 0 ? Math.min(100, (dl.done_bytes / dl.total_bytes) * 100) : 0}%` }}
+                  />
+                </div>
+                <div className="dl-row dl-meta">
+                  <span>{dl.done_chunks}/{dl.chunks} {t("dl.chunks")}</span>
+                  {dl.status === "active" && dl.bytes_per_sec > 0 && (
+                    <span>{fmtBytes(dl.bytes_per_sec)}/s</span>
+                  )}
+                  {dl.status === "done" && <span className="dl-done">{t("dl.complete")}</span>}
+                  {dl.status === "failed" && <span className="dl-err">{dl.error || t("dl.failed")}</span>}
+                  <span>{Math.round(dl.total_bytes > 0 ? (dl.done_bytes / dl.total_bytes) * 100 : 0)}%</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+      )}
 
       <section className="dual-row">
         <div className="card-panel">
