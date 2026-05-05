@@ -728,6 +728,40 @@ tr:hover td { background: rgba(255,255,255,.02); }
   margin: 2px 0 0 0;
 }
 
+/* Section header inside settings-grid (groups related fields) */
+.section-header {
+  margin: 12px 0 -2px;
+  padding: 10px 14px 12px;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+  background: linear-gradient(180deg, rgba(79,142,247,.06), transparent);
+}
+.section-header-title {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 13px; font-weight: 700;
+  color: var(--text);
+  letter-spacing: .02em;
+  text-transform: uppercase;
+}
+.section-header-title svg { color: var(--primary); }
+.section-header-help {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+  max-width: 720px;
+}
+
+/* Per-field help text under inputs */
+.field-help {
+  margin: 4px 0 0;
+  font-size: 11.5px;
+  line-height: 1.5;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: 0;
+}
+
 /* Custom switch built on top of a hidden checkbox */
 .switch { position: relative; display: inline-block; width: 38px; height: 22px; flex-shrink: 0; }
 .switch input { opacity: 0; width: 0; height: 0; }

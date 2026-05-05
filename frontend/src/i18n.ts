@@ -116,6 +116,22 @@ const en: Strings = {
   "settings.directTunnelHostsHelp": "Hosts that bypass the relay entirely and connect directly (comma-separated). Use for API endpoints that time out through the relay, e.g. api.x.com. Only works if the host is reachable from your network.",
   "settings.blockHosts": "Blocked Hosts",
 
+  // Settings — Chunked downloads
+  "settings.dl.section": "Chunked Downloads",
+  "settings.dl.sectionHelp": "Large files are split into HTTP Range chunks and fetched in parallel through Apps Script, then streamed to the browser. Tune these if downloads stall, error with \"file too large\", or your quota burns too fast.",
+  "settings.dl.maxResponseMB": "Max response size (MB)",
+  "settings.dl.maxResponseMBHelp": "Hard cap on the total file size the proxy will accept. Files larger than this fail with 502 \"file too large\". Default 1024 MB. Increase for very large downloads (e.g. ISO/VM images).",
+  "settings.dl.minSizeMB": "Chunk threshold (MB)",
+  "settings.dl.minSizeMBHelp": "Files smaller than this go through a single relay call (faster). Files at or above use chunked parallel download. Default 5 MB.",
+  "settings.dl.chunkSizeKB": "Chunk size (KB)",
+  "settings.dl.chunkSizeKBHelp": "Bytes per Range request. Smaller = more parallelism but more Apps Script calls (eats quota). Default 512 KB. Minimum 64 KB.",
+  "settings.dl.maxParallel": "Max parallel chunks",
+  "settings.dl.maxParallelHelp": "How many chunks to fetch simultaneously. Higher = faster downloads but heavier on Apps Script. Default 8.",
+  "settings.dl.maxChunks": "Max chunks per file",
+  "settings.dl.maxChunksHelp": "Safety cap on the number of chunks. Default 256 — at 512 KB chunks that's 128 MB. Raise this OR raise the chunk size for files larger than 128 MB.",
+  "settings.dl.extensions": "Trigger file extensions",
+  "settings.dl.extensionsHelp": "URL paths ending with these extensions trigger the chunked path. Comma-separated, leading dot optional. URLs containing 'download', 'dl=', or 'export=download' in the query string also trigger it.",
+
   // Certificate tab
   "cert.tab.auto": "Quick Install",
   "cert.tab.macos": "macOS",
@@ -320,6 +336,22 @@ const fa: Strings = {
   "settings.directTunnelHosts": "میزبان‌های تونل مستقیم",
   "settings.directTunnelHostsHelp": "میزبان‌هایی که بدون رله مستقیماً متصل می‌شوند (با کاما جدا کنید). برای APIهایی که از طریق رله تایم‌اوت می‌شوند استفاده کنید، مثلاً api.x.com. فقط اگر میزبان از شبکه شما قابل دسترسی باشد کار می‌کند.",
   "settings.blockHosts": "میزبان‌های مسدود",
+
+  // Settings — Chunked downloads
+  "settings.dl.section": "دانلود قطعه‌قطعه",
+  "settings.dl.sectionHelp": "فایل‌های بزرگ با استفاده از هدر Range به قطعات HTTP تقسیم شده و به‌صورت موازی از طریق Apps Script دریافت و به مرورگر استریم می‌شوند. اگر دانلودها متوقف می‌شوند، خطای «فایل بسیار بزرگ» می‌گیرید یا سهمیه‌تان سریع تمام می‌شود این مقادیر را تنظیم کنید.",
+  "settings.dl.maxResponseMB": "حداکثر اندازه پاسخ (مگابایت)",
+  "settings.dl.maxResponseMBHelp": "سقف کل اندازه فایلی که پروکسی می‌پذیرد. فایل‌های بزرگ‌تر با خطای 502 «file too large» شکست می‌خورند. پیش‌فرض ۱۰۲۴ مگابایت. برای دانلودهای بسیار بزرگ (مانند ISO یا تصاویر ماشین مجازی) افزایش دهید.",
+  "settings.dl.minSizeMB": "آستانه قطعه‌بندی (مگابایت)",
+  "settings.dl.minSizeMBHelp": "فایل‌های کوچک‌تر از این مقدار با یک درخواست رله گرفته می‌شوند (سریع‌تر). فایل‌های مساوی یا بزرگ‌تر به‌صورت موازی قطعه‌قطعه دانلود می‌شوند. پیش‌فرض ۵ مگابایت.",
+  "settings.dl.chunkSizeKB": "اندازه هر قطعه (کیلوبایت)",
+  "settings.dl.chunkSizeKBHelp": "بایت‌های هر درخواست Range. کوچک‌تر = موازی‌سازی بیشتر اما درخواست‌های Apps Script بیشتر (سهمیه را زودتر تمام می‌کند). پیش‌فرض ۵۱۲ کیلوبایت. حداقل ۶۴ کیلوبایت.",
+  "settings.dl.maxParallel": "حداکثر قطعات موازی",
+  "settings.dl.maxParallelHelp": "تعداد قطعاتی که هم‌زمان دریافت می‌شوند. بیشتر = دانلود سریع‌تر اما فشار بیشتر روی Apps Script. پیش‌فرض ۸.",
+  "settings.dl.maxChunks": "حداکثر تعداد قطعه در هر فایل",
+  "settings.dl.maxChunksHelp": "سقف ایمنی روی تعداد قطعات. پیش‌فرض ۲۵۶ — با اندازه قطعه ۵۱۲ کیلوبایت یعنی ۱۲۸ مگابایت. برای فایل‌های بزرگ‌تر از ۱۲۸ مگابایت این عدد یا اندازه قطعه را افزایش دهید.",
+  "settings.dl.extensions": "پسوندهای فعال‌ساز",
+  "settings.dl.extensionsHelp": "آدرس‌هایی که با این پسوندها پایان می‌یابند مسیر قطعه‌قطعه را فعال می‌کنند. با کاما جدا کنید، نقطه ابتدایی اختیاری است. آدرس‌هایی که در رشته پرس‌وجو شامل «download»، «dl=» یا «export=download» باشند نیز فعال می‌شوند.",
 
   // Certificate tab
   "cert.tab.auto": "نصب سریع",

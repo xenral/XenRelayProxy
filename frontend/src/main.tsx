@@ -28,6 +28,12 @@ type Config = {
   direct_tunnel_hosts: string[];
   block_long_poll_paths: string[];
   block_hosts: string[];
+  max_response_body_bytes: number;
+  chunked_download_min_size: number;
+  chunked_download_chunk_size: number;
+  chunked_download_max_parallel: number;
+  chunked_download_max_chunks: number;
+  chunked_download_extensions: string[];
   accounts: Account[];
   scheduler: {
     strategy: string; quota_safety_margin: number; cooloff_seconds: number;
@@ -94,6 +100,17 @@ const BLANK_CONFIG: Config = {
   direct_tunnel_hosts: [],
   block_long_poll_paths: [],
   block_hosts: [],
+  max_response_body_bytes: 1073741824,
+  chunked_download_min_size: 5242880,
+  chunked_download_chunk_size: 524288,
+  chunked_download_max_parallel: 8,
+  chunked_download_max_chunks: 256,
+  chunked_download_extensions: [
+    ".bin", ".zip", ".tar", ".gz", ".bz2", ".xz", ".7z", ".rar",
+    ".exe", ".msi", ".dmg", ".deb", ".rpm", ".apk", ".iso", ".img",
+    ".mp4", ".mkv", ".avi", ".mov", ".webm", ".mp3", ".flac", ".wav",
+    ".aac", ".pdf", ".doc", ".docx", ".ppt", ".pptx", ".wasm",
+  ],
   accounts: [],
   scheduler: {
     strategy: "least_loaded", quota_safety_margin: 0.95, cooloff_seconds: 900,
@@ -839,6 +856,79 @@ function SettingsView({ cfg, setCfg, refresh }: {
             onChange={(e) => setCfg({ ...cfg, block_hosts: e.target.value.split(",").map((s) => s.trim()).filter(Boolean) })}
             placeholder="ads.example.com, tracker.example.com"
           />
+        </div>
+
+        <div className="wide section-header">
+          <div className="section-header-title">
+            <ArrowDown size={14} />
+            <span>{t("settings.dl.section")}</span>
+          </div>
+          <p className="section-header-help">{t("settings.dl.sectionHelp")}</p>
+        </div>
+
+        <div className="field">
+          <label>{t("settings.dl.maxResponseMB")}</label>
+          <input
+            type="number" min={1}
+            value={Math.round(cfg.max_response_body_bytes / (1024 * 1024))}
+            onChange={(e) => setCfg({ ...cfg, max_response_body_bytes: Math.max(1, Number(e.target.value)) * 1024 * 1024 })}
+          />
+          <p className="field-help">{t("settings.dl.maxResponseMBHelp")}</p>
+        </div>
+        <div className="field">
+          <label>{t("settings.dl.minSizeMB")}</label>
+          <input
+            type="number" min={1}
+            value={Math.round(cfg.chunked_download_min_size / (1024 * 1024))}
+            onChange={(e) => setCfg({ ...cfg, chunked_download_min_size: Math.max(1, Number(e.target.value)) * 1024 * 1024 })}
+          />
+          <p className="field-help">{t("settings.dl.minSizeMBHelp")}</p>
+        </div>
+        <div className="field">
+          <label>{t("settings.dl.chunkSizeKB")}</label>
+          <input
+            type="number" min={64}
+            value={Math.round(cfg.chunked_download_chunk_size / 1024)}
+            onChange={(e) => setCfg({ ...cfg, chunked_download_chunk_size: Math.max(64, Number(e.target.value)) * 1024 })}
+          />
+          <p className="field-help">{t("settings.dl.chunkSizeKBHelp")}</p>
+        </div>
+        <div className="field">
+          <label>{t("settings.dl.maxParallel")}</label>
+          <input
+            type="number" min={1} max={32}
+            value={cfg.chunked_download_max_parallel}
+            onChange={(e) => setCfg({ ...cfg, chunked_download_max_parallel: Math.max(1, Number(e.target.value)) })}
+          />
+          <p className="field-help">{t("settings.dl.maxParallelHelp")}</p>
+        </div>
+        <div className="field">
+          <label>{t("settings.dl.maxChunks")}</label>
+          <input
+            type="number" min={1}
+            value={cfg.chunked_download_max_chunks}
+            onChange={(e) => setCfg({ ...cfg, chunked_download_max_chunks: Math.max(1, Number(e.target.value)) })}
+          />
+          <p className="field-help">{t("settings.dl.maxChunksHelp")}</p>
+        </div>
+        <div className="field wide">
+          <label>{t("settings.dl.extensions")}</label>
+          <input
+            value={(cfg.chunked_download_extensions ?? []).join(", ")}
+            onChange={(e) => setCfg({
+              ...cfg,
+              chunked_download_extensions: e.target.value
+                .split(",")
+                .map((s) => {
+                  const t = s.trim().toLowerCase();
+                  if (!t) return "";
+                  return t.startsWith(".") ? t : "." + t;
+                })
+                .filter(Boolean),
+            })}
+            placeholder=".zip, .pdf, .mp4, .iso"
+          />
+          <p className="field-help">{t("settings.dl.extensionsHelp")}</p>
         </div>
 
         <div className="wide toolbar">
