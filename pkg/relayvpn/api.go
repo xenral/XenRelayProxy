@@ -136,6 +136,9 @@ func (a *API) Start(ctx context.Context) error {
 
 	cfg, err := config.Load(a.configPath)
 	if err != nil {
+		if os.IsNotExist(err) {
+			err = fmt.Errorf("no configuration found at %s — open Settings and save your config before connecting", a.configPath)
+		}
 		a.setError(err)
 		return err
 	}
