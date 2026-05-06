@@ -24,14 +24,20 @@ func NewApp() *App {
 	)}
 }
 
-// appDataDir returns ~/Library/Application Support/XenRelayProxy on macOS,
-// creating it if needed. Falls back to the cwd on error.
+// appDataDir returns the per-user config directory for XenRelayProxy on the
+// current platform (e.g. ~/Library/Application Support on macOS,
+// $XDG_CONFIG_HOME or ~/.config on Linux, %AppData% on Windows), creating it
+// if needed. Falls back to the cwd on error.
 func appDataDir() string {
-	home, err := os.UserHomeDir()
+	base, err := os.UserConfigDir()
 	if err != nil {
-		return "."
+		if home, herr := os.UserHomeDir(); herr == nil {
+			base = filepath.Join(home, ".config")
+		} else {
+			return "."
+		}
 	}
-	dir := filepath.Join(home, "Library", "Application Support", "XenRelayProxy")
+	dir := filepath.Join(base, "XenRelayProxy")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "."
 	}
