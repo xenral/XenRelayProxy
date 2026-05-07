@@ -85,7 +85,7 @@ type CACertInfo = {
   exists: boolean; trusted: boolean; pem: string;
 };
 
-type Screen = "home" | "accounts" | "dashboard" | "logs" | "settings" | "cert" | "terminal" | "about" | "pyrelay";
+type Screen = "home" | "accounts" | "dashboard" | "logs" | "settings" | "cert" | "terminal" | "about" | "pyrelay" | "wizard";
 type ToastKind = "success" | "error" | "info";
 type Toast = { id: number; kind: ToastKind; msg: string };
 
@@ -218,8 +218,6 @@ function App() {
   const [stats, setStats]   = useState<Stats | null>(null);
   const [cfg, setCfg]       = useState<Config>(BLANK_CONFIG);
   const [connecting, setConnecting] = useState(false);
-  const [showWizard, setShowWizard] = useState(false);
-  const [wizardChecked, setWizardChecked] = useState(false);
 
   const t = (key: string, vars?: Record<string, string | number>) => translate(locale, key, vars);
 
@@ -238,10 +236,10 @@ function App() {
     call<Config>("GetConfig").then(setCfg).catch(() => setCfg(BLANK_CONFIG));
     refresh();
     const id = window.setInterval(refresh, 1500);
-    // First-install gate: show wizard until setup_completed flag flips true.
+    // First-install gate: route to wizard screen until setup_completed flips.
     call<boolean>("IsSetupCompleted")
-      .then((done) => { setShowWizard(!done); setWizardChecked(true); })
-      .catch(() => setWizardChecked(true));
+      .then((done) => { if (!done) setScreen("wizard"); })
+      .catch(() => {});
     return () => window.clearInterval(id);
   }, []);
 
@@ -276,6 +274,7 @@ function App() {
     ["settings",  Settings,   "nav.settings"],
     ["cert",      ShieldCheck,"nav.cert"],
     ["terminal",  Terminal,   "nav.terminal"],
+    ["wizard",    Wand2,      "nav.wizard"],
     ["pyrelay",   Server,     "nav.pythonRelayGuide"],
     ["about",     BadgeInfo,  "nav.about"],
   ];
@@ -283,28 +282,13 @@ function App() {
   return (
     <LocaleContext.Provider value={locale}>
       <ToastContainer />
-      {wizardChecked && showWizard && (
-        <Wizard
-          locale={locale}
-          onLocaleChange={changeLocale}
-          onComplete={async () => {
-            setShowWizard(false);
-            try {
-              const fresh = await call<Config>("GetConfig");
-              setCfg(fresh);
-            } catch {}
-            await refresh();
-          }}
-          onClose={() => setShowWizard(false)}
-        />
-      )}
       <div className="app" dir={locale === "fa" ? "rtl" : "ltr"}>
         <aside className="sidebar">
           <div className="brand">
             <div className="brand-icon"><ShieldCheck size={16} color="#fff" /></div>
             <div>
               <strong>XenRelayProxy</strong>
-              <span>v{status?.version ?? "1.3.0"}</span>
+              <span>v{status?.version ?? "1.3.1"}</span>
             </div>
           </div>
           <nav>
@@ -314,10 +298,6 @@ function App() {
               </button>
             ))}
           </nav>
-          <button className="sidebar-rerun" onClick={() => setShowWizard(true)}>
-            <Wand2 size={14} />
-            <span>{t("nav.wizard")}</span>
-          </button>
           <button className="lang" onClick={() => changeLocale(locale === "en" ? "fa" : "en")}>
             <Languages size={15} />
             <span>{t("lang.toggle")}</span>
@@ -350,8 +330,22 @@ function App() {
             {screen === "settings"  && <SettingsView cfg={cfg} setCfg={setCfg} refresh={refresh} />}
             {screen === "cert"      && <CACertView status={status} />}
             {screen === "terminal"  && <TerminalGuideView status={status} />}
+            {screen === "wizard"    && (
+              <Wizard
+                locale={locale}
+                onLocaleChange={changeLocale}
+                onComplete={async () => {
+                  try {
+                    const fresh = await call<Config>("GetConfig");
+                    setCfg(fresh);
+                  } catch {}
+                  await refresh();
+                  setScreen("home");
+                }}
+              />
+            )}
             {screen === "pyrelay"   && <PythonRelayGuide />}
-            {screen === "about"     && <AboutView version={status?.version ?? "1.3.0"} />}
+            {screen === "about"     && <AboutView version={status?.version ?? "1.3.1"} />}
           </ErrorBoundary>
         </main>
       </div>

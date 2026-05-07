@@ -1,10 +1,9 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle, ArrowLeft, ArrowRight, Check, CheckCircle2, Copy,
-  ExternalLink, KeyRound, Languages, Loader2, RefreshCw, Rocket,
-  ShieldCheck, ShieldOff, Sparkles, Wifi, Wand2, X,
+  AlertTriangle, ArrowLeft, ArrowRight, Check, Copy, ExternalLink,
+  KeyRound, Loader2, RefreshCw, Rocket, ShieldCheck, ShieldOff,
+  Sparkles, Wifi, Wand2, X,
 } from "lucide-react";
-import { motion, AnimatePresence } from "motion/react";
 import { translate, type Locale } from "./i18n";
 
 /* ─── Native bridge ──────────────────────────────────────────── */
@@ -33,30 +32,64 @@ async function call<T>(name: string, ...args: unknown[]): Promise<T> {
 type Step = "welcome" | "auth" | "account" | "cert" | "done";
 const ORDER: Step[] = ["welcome", "auth", "account", "cert", "done"];
 
-const stepVariants = {
-  enter: (d: number) => ({ opacity: 0, x: d * 40 }),
-  center: { opacity: 1, x: 0 },
-  exit: (d: number) => ({ opacity: 0, x: d * -40 }),
-};
-
 type ScanResult = { ip: string; rtt_ms: number; ok: boolean; error?: string; recommend: boolean };
 
 type WizardProps = {
   locale: Locale;
   onLocaleChange: (l: Locale) => void;
   onComplete: () => void;
-  onClose?: () => void;
 };
+
+/* ─── Step rail ──────────────────────────────────────────────── */
+
+function StepRail({ t, current, furthest, onJump }: {
+  t: (k: string) => string;
+  current: number;
+  furthest: number;
+  onJump: (i: number) => void;
+}) {
+  const items: [Step, string, React.ElementType][] = [
+    ["welcome", "wizard.rail.welcome", Sparkles],
+    ["auth", "wizard.rail.auth", KeyRound],
+    ["account", "wizard.rail.account", Wand2],
+    ["cert", "wizard.rail.cert", ShieldCheck],
+    ["done", "wizard.rail.done", Rocket],
+  ];
+  return (
+    <aside className="wiz-rail">
+      <div className="wiz-rail-title">{t("wizard.rail.title")}</div>
+      <ol className="wiz-rail-list">
+        {items.map(([_id, key, Icon], i) => {
+          const visited = i <= furthest;
+          const active = i === current;
+          const done = i < furthest;
+          return (
+            <li
+              key={key}
+              className={`wiz-rail-item ${active ? "active" : ""} ${visited ? "visited" : ""} ${done ? "done" : ""}`}
+              onClick={() => visited && onJump(i)}
+            >
+              <span className="wiz-rail-num">
+                {done ? <Check size={11} /> : i + 1}
+              </span>
+              <Icon size={13} />
+              <span className="wiz-rail-label">{t(key)}</span>
+            </li>
+          );
+        })}
+      </ol>
+    </aside>
+  );
+}
 
 /* ─── Top-level component ────────────────────────────────────── */
 
-export default function Wizard({ locale, onLocaleChange, onComplete, onClose }: WizardProps) {
+export default function Wizard({ locale, onLocaleChange, onComplete }: WizardProps) {
   const t = (k: string, vars?: Record<string, string | number>) => translate(locale, k, vars);
 
   const [step, setStep] = useState<Step>("welcome");
-  const [direction, setDirection] = useState<1 | -1>(1);
+  const [furthest, setFurthest] = useState(0);
 
-  // Persisted values
   const [authKey, setAuthKey] = useState("");
   const [frontDomain, setFrontDomain] = useState("www.google.com");
   const [googleIP, setGoogleIP] = useState("216.239.38.120");
@@ -68,7 +101,6 @@ export default function Wizard({ locale, onLocaleChange, onComplete, onClose }: 
 
   const [savingErr, setSavingErr] = useState<string | null>(null);
 
-  // First-mount: pre-load any existing config (resume mid-setup).
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -103,8 +135,9 @@ export default function Wizard({ locale, onLocaleChange, onComplete, onClose }: 
   const progressPct = (stepIndex / (ORDER.length - 1)) * 100;
 
   function go(next: Step) {
-    setDirection(ORDER.indexOf(next) > stepIndex ? 1 : -1);
+    const i = ORDER.indexOf(next);
     setStep(next);
+    if (i > furthest) setFurthest(i);
   }
 
   async function persistDraft(extra: Partial<any> = {}) {
@@ -136,142 +169,105 @@ export default function Wizard({ locale, onLocaleChange, onComplete, onClose }: 
     }
   }
 
-  function next() {
-    const i = stepIndex;
-    if (i < ORDER.length - 1) go(ORDER[i + 1]);
-  }
   function back() {
-    const i = stepIndex;
-    if (i > 0) go(ORDER[i - 1]);
+    if (stepIndex > 0) go(ORDER[stepIndex - 1]);
+  }
+
+  async function next() {
+    if (step === "auth") {
+      if (isPlaceholderKey(authKey)) { setSavingErr(t("wizard.auth.placeholderError")); return; }
+      if (!frontDomain.trim()) { setSavingErr(t("wizard.auth.frontDomainRequired")); return; }
+    }
+    if (step === "account") {
+      if (scriptIDs.length === 0) { setSavingErr(t("wizard.account.scriptIdsRequired")); return; }
+    }
+    await persistDraft();
+    if (stepIndex < ORDER.length - 1) go(ORDER[stepIndex + 1]);
   }
 
   return (
-    <div className="wiz-root" dir={locale === "fa" ? "rtl" : "ltr"}>
-      <div className="wiz-bg" aria-hidden>
-        <span className="wiz-bg-orb wiz-bg-orb-1" />
-        <span className="wiz-bg-orb wiz-bg-orb-2" />
-        <span className="wiz-bg-orb wiz-bg-orb-3" />
+    <div className="wiz-page" dir={locale === "fa" ? "rtl" : "ltr"}>
+      <div className="wiz-progress">
+        <div className="wiz-progress-fill" style={{ width: `${progressPct}%` }} />
       </div>
 
-      <div className="wiz-shell">
-        <div className="wiz-topbar">
-          <div className="wiz-topbar-brand">
-            <div className="wiz-brand-icon"><ShieldCheck size={16} color="#fff" /></div>
-            <span>XenRelayProxy · {t("wizard.topbar.setup")}</span>
-          </div>
-          <div className="wiz-topbar-right">
-            <span className="wiz-step-pill">
-              {t("wizard.topbar.step", { n: Math.min(stepIndex + 1, ORDER.length), total: ORDER.length })}
-            </span>
-            {onClose && (
-              <button className="wiz-close" onClick={onClose} aria-label={t("wizard.close")}>
-                <X size={16} />
-              </button>
-            )}
-          </div>
-        </div>
+      <div className="wiz-layout">
+        <StepRail
+          t={t}
+          current={stepIndex}
+          furthest={furthest}
+          onJump={(i) => go(ORDER[i])}
+        />
 
-        <div className="wiz-progress">
-          <motion.div
-            className="wiz-progress-fill"
-            animate={{ width: `${progressPct}%` }}
-            transition={{ type: "spring", stiffness: 220, damping: 28 }}
-          />
-        </div>
-
-        <div className="wiz-stage">
-          <AnimatePresence mode="wait" custom={direction}>
-            <motion.div
-              key={step}
-              className="wiz-step"
-              custom={direction}
-              variants={stepVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={{ type: "spring", stiffness: 260, damping: 28 }}
-            >
-              {step === "welcome" && (
-                <WelcomeStep
-                  t={t}
-                  locale={locale}
-                  onLocaleChange={onLocaleChange}
-                  onNext={() => { next(); }}
-                />
-              )}
-              {step === "auth" && (
-                <AuthStep
-                  t={t}
-                  authKey={authKey}
-                  setAuthKey={setAuthKey}
-                  frontDomain={frontDomain}
-                  setFrontDomain={setFrontDomain}
-                />
-              )}
-              {step === "account" && (
-                <AccountStep
-                  t={t}
-                  authKey={authKey}
-                  accLabel={accLabel} setAccLabel={setAccLabel}
-                  accEmail={accEmail} setAccEmail={setAccEmail}
-                  scriptIDs={scriptIDs} setScriptIDs={setScriptIDs}
-                  dailyQuota={dailyQuota} setDailyQuota={setDailyQuota}
-                  googleIP={googleIP} setGoogleIP={setGoogleIP}
-                  frontDomain={frontDomain} setFrontDomain={setFrontDomain}
-                />
-              )}
-              {step === "cert" && <CertStep t={t} />}
-              {step === "done" && (
-                <DoneStep
-                  t={t}
-                  authKey={authKey}
-                  accLabel={accLabel}
-                  scriptIDs={scriptIDs}
-                  googleIP={googleIP}
-                  onStart={async () => {
-                    await persistDraft({ setup_completed: true });
-                    try { await call("MarkSetupCompleted"); } catch {}
-                    try { await call("Start"); } catch {}
-                    onComplete();
-                  }}
-                />
-              )}
-            </motion.div>
-          </AnimatePresence>
-        </div>
-
-        {savingErr && (
-          <div className="wiz-error-bar">
-            <AlertTriangle size={13} />
-            <span>{savingErr}</span>
-          </div>
-        )}
-
-        {step !== "done" && (
-          <div className="wiz-footer">
-            <button className="wiz-btn ghost" onClick={back} disabled={stepIndex === 0}>
-              <ArrowLeft size={14} />
-              <span>{t("wizard.back")}</span>
-            </button>
-            <button
-              className="wiz-btn primary"
-              onClick={async () => {
-                if (step === "auth") {
-                  if (isPlaceholderKey(authKey)) { setSavingErr(t("wizard.auth.placeholderError")); return; }
-                  if (!frontDomain.trim()) { setSavingErr(t("wizard.auth.frontDomainRequired")); return; }
-                }
-                if (step === "account") {
-                  if (scriptIDs.length === 0) { setSavingErr(t("wizard.account.scriptIdsRequired")); return; }
-                }
-                await persistDraft();
-                next();
+        <div className="wiz-content">
+          {step === "welcome" && (
+            <WelcomeStep
+              t={t}
+              locale={locale}
+              onLocaleChange={onLocaleChange}
+              onNext={() => go("auth")}
+            />
+          )}
+          {step === "auth" && (
+            <AuthStep
+              t={t}
+              authKey={authKey}
+              setAuthKey={setAuthKey}
+              frontDomain={frontDomain}
+              setFrontDomain={setFrontDomain}
+            />
+          )}
+          {step === "account" && (
+            <AccountStep
+              t={t}
+              authKey={authKey}
+              accLabel={accLabel} setAccLabel={setAccLabel}
+              accEmail={accEmail} setAccEmail={setAccEmail}
+              scriptIDs={scriptIDs} setScriptIDs={setScriptIDs}
+              dailyQuota={dailyQuota} setDailyQuota={setDailyQuota}
+              googleIP={googleIP} setGoogleIP={setGoogleIP}
+            />
+          )}
+          {step === "cert" && <CertStep t={t} />}
+          {step === "done" && (
+            <DoneStep
+              t={t}
+              authKey={authKey}
+              accLabel={accLabel}
+              scriptIDs={scriptIDs}
+              googleIP={googleIP}
+              onStart={async () => {
+                await persistDraft({ setup_completed: true });
+                try { await call("MarkSetupCompleted"); } catch {}
+                try { await call("Start"); } catch {}
+                onComplete();
               }}
-            >
-              <span>{t(step === "cert" ? "wizard.review" : "wizard.next")}</span>
-              <ArrowRight size={14} />
-            </button>
-          </div>
-        )}
+            />
+          )}
+
+          {savingErr && (
+            <div className="wiz-error-bar">
+              <AlertTriangle size={13} />
+              <span>{savingErr}</span>
+              <button className="wiz-error-dismiss" onClick={() => setSavingErr(null)}>
+                <X size={12} />
+              </button>
+            </div>
+          )}
+
+          {step !== "done" && (
+            <div className="wiz-footer">
+              <button className="wiz-btn ghost" onClick={back} disabled={stepIndex === 0}>
+                <ArrowLeft size={14} />
+                <span>{t("wizard.back")}</span>
+              </button>
+              <button className="wiz-btn primary" onClick={next}>
+                <span>{t(step === "cert" ? "wizard.review" : "wizard.next")}</span>
+                <ArrowRight size={14} />
+              </button>
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -287,89 +283,46 @@ function WelcomeStep({ t, locale, onLocaleChange, onNext }: {
 }) {
   return (
     <div className="wiz-card wiz-welcome">
-      <motion.div
-        className="wiz-orb"
-        initial={{ opacity: 0, scale: 0.8 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.55, ease: [0.2, 0.8, 0.2, 1] }}
-      >
-        <span className="wiz-orb-pulse p1" />
-        <span className="wiz-orb-pulse p2" />
-        <span className="wiz-orb-core">
-          <Sparkles size={36} />
-        </span>
-      </motion.div>
+      <div className="wiz-orb-static">
+        <Sparkles size={32} />
+      </div>
 
-      <motion.h1
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.15, duration: 0.4 }}
-      >
-        {t("wizard.welcome.title")}
-      </motion.h1>
-      <motion.p
-        className="wiz-lead"
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.22, duration: 0.4 }}
-      >
-        {t("wizard.welcome.body")}
-      </motion.p>
+      <h1>{t("wizard.welcome.title")}</h1>
+      <p className="wiz-lead">{t("wizard.welcome.body")}</p>
 
-      <motion.div
-        className="wiz-roadmap"
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.3, duration: 0.4 }}
-      >
+      <ul className="wiz-roadmap">
         {[
           ["wizard.welcome.r1", KeyRound],
           ["wizard.welcome.r2", Wand2],
           ["wizard.welcome.r3", ShieldCheck],
           ["wizard.welcome.r4", Rocket],
         ].map(([k, Icon]: any, i) => (
-          <div className="wiz-roadmap-item" key={k}>
+          <li className="wiz-roadmap-item" key={k}>
             <span className="wiz-roadmap-num">{i + 1}</span>
             <Icon size={14} />
             <span>{t(k)}</span>
-          </div>
+          </li>
         ))}
-      </motion.div>
+      </ul>
 
-      <motion.div
-        className="wiz-langpill"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.4 }}
-      >
-        <Languages size={14} />
-        <button
-          className={locale === "en" ? "active" : ""}
-          onClick={() => onLocaleChange("en")}
-        >English</button>
-        <button
-          className={locale === "fa" ? "active" : ""}
-          onClick={() => onLocaleChange("fa")}
-        >فارسی</button>
-        <motion.span
-          className="wiz-langpill-thumb"
-          animate={{ x: locale === "en" ? 0 : "100%" }}
-          transition={{ type: "spring", stiffness: 360, damping: 30 }}
-        />
-      </motion.div>
+      <div className="wiz-langrow">
+        <span className="wiz-langrow-label">{t("wizard.welcome.lang")}</span>
+        <div className="wiz-langgroup">
+          <button
+            className={`wiz-langbtn ${locale === "en" ? "active" : ""}`}
+            onClick={() => onLocaleChange("en")}
+          >English</button>
+          <button
+            className={`wiz-langbtn ${locale === "fa" ? "active" : ""}`}
+            onClick={() => onLocaleChange("fa")}
+          >فارسی</button>
+        </div>
+      </div>
 
-      <motion.button
-        className="wiz-btn primary big"
-        onClick={onNext}
-        initial={{ opacity: 0, y: 10 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.48 }}
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
-      >
+      <button className="wiz-btn primary big" onClick={onNext}>
         <span>{t("wizard.welcome.cta")}</span>
         <ArrowRight size={15} />
-      </motion.button>
+      </button>
     </div>
   );
 }
@@ -413,20 +366,14 @@ function AuthStep({ t, authKey, setAuthKey, frontDomain, setFrontDomain }: {
 
       <label className="wiz-label">{t("wizard.auth.keyLabel")}</label>
       <div className="wiz-key-row">
-        <motion.input
-          key={authKey.slice(0, 8)}
+        <input
           className={`wiz-input mono ${placeholder ? "danger" : ""}`}
           value={authKey}
           onChange={(e) => setAuthKey(e.target.value)}
           spellCheck={false}
-          initial={{ opacity: 0.5, y: -2 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.18 }}
         />
         <button className="wiz-iconbtn" onClick={regen} disabled={busy} title={t("wizard.auth.regenerate")}>
-          {busy
-            ? <Loader2 size={14} style={{ animation: "icon-spin 1s linear infinite" }} />
-            : <RefreshCw size={14} />}
+          {busy ? <Loader2 size={14} /> : <RefreshCw size={14} />}
         </button>
         <button className="wiz-iconbtn" onClick={copy} title={t("wizard.auth.copy")}>
           {copied ? <Check size={14} color="var(--success)" /> : <Copy size={14} />}
@@ -458,7 +405,7 @@ function AccountStep({
   t, authKey,
   accLabel, setAccLabel, accEmail, setAccEmail,
   scriptIDs, setScriptIDs, dailyQuota, setDailyQuota,
-  googleIP, setGoogleIP, frontDomain, setFrontDomain,
+  googleIP, setGoogleIP,
 }: {
   t: (k: string, vars?: any) => string;
   authKey: string;
@@ -467,7 +414,6 @@ function AccountStep({
   scriptIDs: string[]; setScriptIDs: (a: string[]) => void;
   dailyQuota: number; setDailyQuota: (n: number) => void;
   googleIP: string; setGoogleIP: (s: string) => void;
-  frontDomain: string; setFrontDomain: (s: string) => void;
 }) {
   const [chipDraft, setChipDraft] = useState("");
   const [code, setCode] = useState<string>("");
@@ -514,7 +460,6 @@ function AccountStep({
     }
   }
 
-  // Build a Code.gs preview where AUTH_KEY is replaced with the user's key.
   const personalisedSnippet = useMemo(() => {
     return `const AUTH_KEY = "${authKey || "<your auth key>"}";`;
   }, [authKey]);
@@ -540,23 +485,14 @@ function AccountStep({
 
       <label className="wiz-label" style={{ marginTop: 14 }}>{t("wizard.account.scriptIds")}</label>
       <div className="wiz-chips">
-        <AnimatePresence initial={false}>
-          {scriptIDs.map((s) => (
-            <motion.span
-              key={s}
-              className="wiz-chip"
-              initial={{ opacity: 0, scale: 0.7 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.7 }}
-              transition={{ type: "spring", stiffness: 380, damping: 24 }}
-            >
-              <span className="mono-sm">{s.length > 24 ? s.slice(0, 18) + "…" + s.slice(-4) : s}</span>
-              <button onClick={() => removeChip(s)} aria-label="remove">
-                <X size={11} />
-              </button>
-            </motion.span>
-          ))}
-        </AnimatePresence>
+        {scriptIDs.map((s) => (
+          <span key={s} className="wiz-chip">
+            <span className="mono-sm">{s.length > 24 ? s.slice(0, 18) + "…" + s.slice(-4) : s}</span>
+            <button onClick={() => removeChip(s)} aria-label="remove">
+              <X size={11} />
+            </button>
+          </span>
+        ))}
         <input
           className="wiz-chip-input mono"
           value={chipDraft}
@@ -593,7 +529,7 @@ function AccountStep({
         </div>
       </div>
 
-      {/* ── Code.gs deploy panel ── */}
+      {/* Code.gs deploy panel */}
       <div className="wiz-deploy">
         <div className="wiz-deploy-head">
           <Wand2 size={14} />
@@ -636,24 +572,17 @@ function AccountStep({
         </div>
       </div>
 
-      {/* ── IP scan panel ── */}
+      {/* IP scan panel */}
       <div className="wiz-scan">
         <div className="wiz-scan-head">
           <Wifi size={14} />
           <h3>{t("wizard.scan.title")}</h3>
           <button className="wiz-btn ghost small" onClick={runScan} disabled={scanning}>
-            {scanning
-              ? <Loader2 size={12} style={{ animation: "icon-spin 1s linear infinite" }} />
-              : <Wifi size={12} />}
+            {scanning ? <Loader2 size={12} /> : <Wifi size={12} />}
             <span>{scanning ? t("wizard.scan.scanning") : t("wizard.scan.cta")}</span>
           </button>
         </div>
         <p className="wiz-hint">{t("wizard.scan.body")}</p>
-        {scanning && (
-          <div className="wiz-scan-rings" aria-hidden>
-            <span className="r r1" /><span className="r r2" /><span className="r r3" />
-          </div>
-        )}
         {scanErr && <div className="wiz-hint danger"><AlertTriangle size={12} /> {scanErr}</div>}
         {scanResults.length > 0 && (
           <div className="wiz-scan-results">
@@ -694,7 +623,6 @@ function CertStep({ t }: { t: (k: string) => string }) {
     setInstalling(true); setErr(null);
     try {
       await call("InstallCA");
-      // Poll trust state.
       const start = Date.now();
       pollRef.current = window.setInterval(async () => {
         try {
@@ -708,7 +636,7 @@ function CertStep({ t }: { t: (k: string) => string }) {
             if (pollRef.current) window.clearInterval(pollRef.current);
           }
         } catch {}
-      }, 1000);
+      }, 1500);
     } catch (e: any) {
       setErr(String(e?.message || e));
       setInstalling(false);
@@ -726,10 +654,10 @@ function CertStep({ t }: { t: (k: string) => string }) {
       <div className={`wiz-cert-state ${trusted ? "ok" : installing ? "warn" : "off"}`}>
         <div className="wiz-cert-icon">
           {installing
-            ? <Loader2 size={32} style={{ animation: "icon-spin 1s linear infinite" }} />
+            ? <Loader2 size={28} />
             : trusted
-              ? <ShieldCheck size={32} />
-              : <ShieldOff size={32} />}
+              ? <ShieldCheck size={28} />
+              : <ShieldOff size={28} />}
         </div>
         <div className="wiz-cert-text">
           <strong>
@@ -741,9 +669,7 @@ function CertStep({ t }: { t: (k: string) => string }) {
         </div>
         {!trusted && (
           <button className="wiz-btn primary" onClick={install} disabled={installing}>
-            {installing
-              ? <Loader2 size={14} style={{ animation: "icon-spin 1s linear infinite" }} />
-              : <ShieldCheck size={14} />}
+            {installing ? <Loader2 size={14} /> : <ShieldCheck size={14} />}
             <span>{installing ? t("wizard.cert.installing") : t("wizard.cert.install")}</span>
           </button>
         )}
@@ -767,53 +693,14 @@ function DoneStep({ t, authKey, accLabel, scriptIDs, googleIP, onStart }: {
 
   return (
     <div className="wiz-card wiz-done">
-      <motion.div
-        className="wiz-checkmark"
-        initial={{ scale: 0.6, opacity: 0 }}
-        animate={{ scale: 1, opacity: 1 }}
-        transition={{ type: "spring", stiffness: 300, damping: 20 }}
-      >
-        <svg viewBox="0 0 64 64" width="68" height="68">
-          <motion.circle
-            cx="32" cy="32" r="29"
-            fill="none" stroke="var(--success)" strokeWidth="3"
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ duration: 0.55, ease: [0.2, 0.8, 0.2, 1] }}
-          />
-          <motion.path
-            d="M20 33 L29 42 L45 24"
-            fill="none" stroke="var(--success)" strokeWidth="4"
-            strokeLinecap="round" strokeLinejoin="round"
-            initial={{ pathLength: 0 }}
-            animate={{ pathLength: 1 }}
-            transition={{ delay: 0.45, duration: 0.45, ease: [0.2, 0.8, 0.2, 1] }}
-          />
-        </svg>
-      </motion.div>
+      <div className="wiz-done-icon">
+        <Check size={36} />
+      </div>
 
-      <motion.h1
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.5 }}
-      >
-        {t("wizard.done.title")}
-      </motion.h1>
-      <motion.p
-        className="wiz-lead"
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.55 }}
-      >
-        {t("wizard.done.body")}
-      </motion.p>
+      <h1>{t("wizard.done.title")}</h1>
+      <p className="wiz-lead">{t("wizard.done.body")}</p>
 
-      <motion.div
-        className="wiz-summary"
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.62 }}
-      >
+      <div className="wiz-summary">
         <div className="wiz-summary-row">
           <span>{t("wizard.done.summaryAuthKey")}</span>
           <strong className="mono-sm">{maskKey(authKey)}</strong>
@@ -826,26 +713,19 @@ function DoneStep({ t, authKey, accLabel, scriptIDs, googleIP, onStart }: {
           <span>{t("wizard.done.summaryFrontIP")}</span>
           <strong className="mono-sm">{googleIP}</strong>
         </div>
-      </motion.div>
+      </div>
 
-      <motion.button
+      <button
         className="wiz-btn primary big"
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.72 }}
-        whileHover={{ scale: 1.03 }}
-        whileTap={{ scale: 0.97 }}
         disabled={starting}
         onClick={async () => {
           setStarting(true);
           try { await onStart(); } finally { setStarting(false); }
         }}
       >
-        {starting
-          ? <Loader2 size={15} style={{ animation: "icon-spin 1s linear infinite" }} />
-          : <Rocket size={15} />}
+        {starting ? <Loader2 size={15} /> : <Rocket size={15} />}
         <span>{starting ? t("wizard.done.starting") : t("wizard.done.start")}</span>
-      </motion.button>
+      </button>
     </div>
   );
 }
