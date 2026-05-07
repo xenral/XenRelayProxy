@@ -4,13 +4,21 @@ import {relayvpn} from '../models';
 import {config} from '../models';
 import {frontscan} from '../models';
 
+export function GenerateAuthKey():Promise<string>;
+
 export function GetCACertInfo():Promise<relayvpn.CACertInfo>;
+
+export function GetCodeGS():Promise<string>;
 
 export function GetConfig():Promise<config.Config>;
 
 export function InstallCA():Promise<void>;
 
 export function IsCATrusted():Promise<boolean>;
+
+export function IsSetupCompleted():Promise<boolean>;
+
+export function MarkSetupCompleted():Promise<void>;
 
 export function RevealCACert():Promise<void>;
 

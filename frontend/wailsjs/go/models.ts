@@ -54,6 +54,7 @@ export namespace config {
 	}
 	export class Config {
 	    mode: string;
+	    setup_completed: boolean;
 	    google_ip: string;
 	    front_domain: string;
 	    front_domains?: string[];
@@ -101,6 +102,7 @@ export namespace config {
 	    constructor(source: any = {}) {
 	        if ('string' === typeof source) source = JSON.parse(source);
 	        this.mode = source["mode"];
+	        this.setup_completed = source["setup_completed"];
 	        this.google_ip = source["google_ip"];
 	        this.front_domain = source["front_domain"];
 	        this.front_domains = source["front_domains"];
@@ -190,6 +192,38 @@ export namespace frontscan {
 
 export namespace obs {
 	
+	export class DownloadEntry {
+	    id: string;
+	    url: string;
+	    filename: string;
+	    total_bytes: number;
+	    done_bytes: number;
+	    chunks: number;
+	    done_chunks: number;
+	    status: string;
+	    error?: string;
+	    started_at: string;
+	    bytes_per_sec: number;
+	
+	    static createFrom(source: any = {}) {
+	        return new DownloadEntry(source);
+	    }
+	
+	    constructor(source: any = {}) {
+	        if ('string' === typeof source) source = JSON.parse(source);
+	        this.id = source["id"];
+	        this.url = source["url"];
+	        this.filename = source["filename"];
+	        this.total_bytes = source["total_bytes"];
+	        this.done_bytes = source["done_bytes"];
+	        this.chunks = source["chunks"];
+	        this.done_chunks = source["done_chunks"];
+	        this.status = source["status"];
+	        this.error = source["error"];
+	        this.started_at = source["started_at"];
+	        this.bytes_per_sec = source["bytes_per_sec"];
+	    }
+	}
 	export class Entry {
 	    time: string;
 	    level: string;
@@ -334,6 +368,7 @@ export namespace relayvpn {
 	    metrics: obs.Snapshot;
 	    scheduler: scheduler.Stats;
 	    logs: obs.Entry[];
+	    downloads: obs.DownloadEntry[];
 	
 	    static createFrom(source: any = {}) {
 	        return new Stats(source);
@@ -345,6 +380,7 @@ export namespace relayvpn {
 	        this.metrics = this.convertValues(source["metrics"], obs.Snapshot);
 	        this.scheduler = this.convertValues(source["scheduler"], scheduler.Stats);
 	        this.logs = this.convertValues(source["logs"], obs.Entry);
+	        this.downloads = this.convertValues(source["downloads"], obs.DownloadEntry);
 	    }
 	
 		convertValues(a: any, classs: any, asMap: boolean = false): any {
