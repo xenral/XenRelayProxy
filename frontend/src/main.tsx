@@ -83,7 +83,7 @@ type CACertInfo = {
   exists: boolean; trusted: boolean; pem: string;
 };
 
-type Screen = "home" | "accounts" | "dashboard" | "logs" | "settings" | "cert" | "about";
+type Screen = "home" | "accounts" | "dashboard" | "logs" | "settings" | "cert" | "terminal" | "about";
 type ToastKind = "success" | "error" | "info";
 type Toast = { id: number; kind: ToastKind; msg: string };
 
@@ -264,9 +264,10 @@ function App() {
     ["home",      Home,       "nav.home"],
     ["accounts",  Users,      "nav.accounts"],
     ["dashboard", Gauge,      "nav.dashboard"],
-    ["logs",      Terminal,   "nav.logs"],
+    ["logs",      FileText,   "nav.logs"],
     ["settings",  Settings,   "nav.settings"],
     ["cert",      ShieldCheck,"nav.cert"],
+    ["terminal",  Terminal,   "nav.terminal"],
     ["about",     BadgeInfo,  "nav.about"],
   ];
 
@@ -320,6 +321,7 @@ function App() {
             {screen === "logs"      && <LogsView stats={stats} />}
             {screen === "settings"  && <SettingsView cfg={cfg} setCfg={setCfg} refresh={refresh} />}
             {screen === "cert"      && <CACertView status={status} />}
+            {screen === "terminal"  && <TerminalGuideView status={status} />}
             {screen === "about"     && <AboutView version={status?.version ?? "0.2.0"} />}
           </ErrorBoundary>
         </main>
@@ -1276,6 +1278,295 @@ function LinuxGuide({ certPath }: { certPath: string }) {
             {t("cert.linux.firefoxBodyA")}<strong>{t("cert.tab.firefox")}</strong>
             {t("cert.linux.firefoxBodyB")}
           </p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ─── TerminalGuideView ──────────────────────────────────────── */
+
+type TermTab = "macos" | "linux" | "powershell" | "cmd";
+
+function detectTermTab(): TermTab {
+  const p = (typeof navigator !== "undefined" ? navigator.platform : "").toLowerCase();
+  if (p.includes("mac")) return "macos";
+  if (p.includes("win")) return "powershell";
+  return "linux";
+}
+
+function TerminalGuideView({ status }: { status: Status | null }) {
+  const t = useT();
+  const [tab, setTab] = useState<TermTab>(detectTermTab);
+  const [info, setInfo] = useState<CACertInfo | null>(null);
+
+  useEffect(() => { call<CACertInfo>("GetCACertInfo").then(setInfo).catch(() => {}); }, []);
+
+  const httpAddr  = status?.listen_address || "127.0.0.1:8085";
+  const socksAddr = status?.socks5_address || "127.0.0.1:1080";
+  const certPath  = info?.cert_path || "";
+  const path      = certPath || t("term.certPathMissing");
+
+  const tabs: [TermTab, string][] = [
+    ["macos",      t("term.tab.macos")],
+    ["linux",      t("term.tab.linux")],
+    ["powershell", t("term.tab.powershell")],
+    ["cmd",        t("term.tab.cmd")],
+  ];
+
+  return (
+    <div className="ca-guide">
+      <div className="cert-info-grid">
+        <div className="cert-info-item" style={{ gridColumn: "1 / -1" }}>
+          <dt>{t("term.intro.title")}</dt>
+          <dd style={{ marginTop: 6 }}>{t("term.intro.body")}</dd>
+        </div>
+        <div className="cert-info-item">
+          <dt>{t("term.proxyHttp")}</dt>
+          <dd className="mono">{httpAddr}</dd>
+        </div>
+        <div className="cert-info-item">
+          <dt>{t("term.proxySocks")}</dt>
+          <dd className="mono">{socksAddr || t("homecert.off")}</dd>
+        </div>
+        <div className="cert-info-item" style={{ gridColumn: "1 / -1" }}>
+          <dt>{t("term.certPath")}</dt>
+          <dd className="mono">{path}</dd>
+        </div>
+      </div>
+
+      <div className="tabs" style={{ marginBottom: 12 }}>
+        {tabs.map(([id, label]) => (
+          <button key={id} className={`tab-btn${tab === id ? " active" : ""}`} onClick={() => setTab(id)}>
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {tab === "macos"      && <UnixShellGuide path={certPath} httpAddr={httpAddr} socksAddr={socksAddr} flavor="macos" />}
+      {tab === "linux"      && <UnixShellGuide path={certPath} httpAddr={httpAddr} socksAddr={socksAddr} flavor="linux" />}
+      {tab === "powershell" && <PowerShellGuide path={certPath} httpAddr={httpAddr} />}
+      {tab === "cmd"        && <CmdGuide        path={certPath} httpAddr={httpAddr} />}
+
+      <ToolTipsPanel certPath={certPath} />
+    </div>
+  );
+}
+
+function CopyBlock({ code }: { code: string }) {
+  const t = useT();
+  const [copied, setCopied] = useState(false);
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(code);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    } catch { /* clipboard may be unavailable */ }
+  }
+  return (
+    <div style={{ position: "relative" }}>
+      <code className="block" style={{ paddingRight: 88 }}>{code}</code>
+      <button
+        className="btn"
+        onClick={copy}
+        style={{ position: "absolute", top: 8, right: 8, padding: "4px 9px", fontSize: 11 }}
+      >
+        {copied ? <CheckCheck size={12} /> : <Copy size={12} />}
+        {copied ? t("term.copied") : t("term.copy")}
+      </button>
+    </div>
+  );
+}
+
+function shSnippet(path: string, httpAddr: string, socksAddr: string): string {
+  const cert = path || "/path/to/ca.crt";
+  const lines = [
+    `export NODE_EXTRA_CA_CERTS="${cert}"`,
+    `export SSL_CERT_FILE="${cert}"`,
+    `export REQUESTS_CA_BUNDLE="${cert}"`,
+    `export PIP_CERT="${cert}"`,
+    `export CURL_CA_BUNDLE="${cert}"`,
+    `export HTTP_PROXY="http://${httpAddr}"`,
+    `export HTTPS_PROXY="http://${httpAddr}"`,
+  ];
+  if (socksAddr) lines.push(`export ALL_PROXY="socks5h://${socksAddr}"`);
+  lines.push(`export NO_PROXY="localhost,127.0.0.1,::1"`);
+  return lines.join("\n");
+}
+
+function pwshSnippet(path: string, httpAddr: string): string {
+  const cert = path || "C:\\path\\to\\ca.crt";
+  return [
+    `$env:NODE_EXTRA_CA_CERTS = "${cert}"`,
+    `$env:SSL_CERT_FILE       = "${cert}"`,
+    `$env:REQUESTS_CA_BUNDLE  = "${cert}"`,
+    `$env:PIP_CERT            = "${cert}"`,
+    `$env:CURL_CA_BUNDLE      = "${cert}"`,
+    `$env:HTTP_PROXY          = "http://${httpAddr}"`,
+    `$env:HTTPS_PROXY         = "http://${httpAddr}"`,
+    `$env:NO_PROXY            = "localhost,127.0.0.1"`,
+  ].join("\n");
+}
+
+function cmdSessionSnippet(path: string, httpAddr: string): string {
+  const cert = path || "C:\\path\\to\\ca.crt";
+  return [
+    `set NODE_EXTRA_CA_CERTS=${cert}`,
+    `set SSL_CERT_FILE=${cert}`,
+    `set REQUESTS_CA_BUNDLE=${cert}`,
+    `set PIP_CERT=${cert}`,
+    `set CURL_CA_BUNDLE=${cert}`,
+    `set HTTP_PROXY=http://${httpAddr}`,
+    `set HTTPS_PROXY=http://${httpAddr}`,
+    `set NO_PROXY=localhost,127.0.0.1`,
+  ].join("\n");
+}
+
+function cmdPersistSnippet(path: string, httpAddr: string): string {
+  const cert = path || "C:\\path\\to\\ca.crt";
+  return [
+    `setx NODE_EXTRA_CA_CERTS "${cert}"`,
+    `setx SSL_CERT_FILE       "${cert}"`,
+    `setx REQUESTS_CA_BUNDLE  "${cert}"`,
+    `setx PIP_CERT            "${cert}"`,
+    `setx CURL_CA_BUNDLE      "${cert}"`,
+    `setx HTTP_PROXY          "http://${httpAddr}"`,
+    `setx HTTPS_PROXY         "http://${httpAddr}"`,
+  ].join("\n");
+}
+
+function UnixShellGuide({ path, httpAddr, socksAddr, flavor }: {
+  path: string; httpAddr: string; socksAddr: string; flavor: "macos" | "linux";
+}) {
+  const t = useT();
+  const snippet = shSnippet(path, httpAddr, socksAddr);
+  return (
+    <div className="guide-steps">
+      <div className="step">
+        <div className="step-num">1</div>
+        <div className="step-body">
+          <strong>{t("term.session.title")}</strong>
+          <p>{t("term.session.body")}</p>
+          <CopyBlock code={snippet} />
+        </div>
+      </div>
+      <div className="step">
+        <div className="step-num">2</div>
+        <div className="step-body">
+          <strong>{t("term.persist.title")}</strong>
+          <p>{flavor === "macos" ? t("term.persistMac.body") : t("term.persistLinux.body")}</p>
+        </div>
+      </div>
+      <div className="step">
+        <div className="step-num">!</div>
+        <div className="step-body">
+          <p style={{ color: "var(--muted)" }}>{t("term.note.proxyOptional")}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function PowerShellGuide({ path, httpAddr }: { path: string; httpAddr: string }) {
+  const t = useT();
+  const snippet = pwshSnippet(path, httpAddr);
+  return (
+    <div className="guide-steps">
+      <div className="step">
+        <div className="step-num">1</div>
+        <div className="step-body">
+          <strong>{t("term.session.title")}</strong>
+          <p>{t("term.session.body")}</p>
+          <CopyBlock code={snippet} />
+        </div>
+      </div>
+      <div className="step">
+        <div className="step-num">2</div>
+        <div className="step-body">
+          <strong>{t("term.persist.title")}</strong>
+          <p>{t("term.persistPwsh.body")}</p>
+        </div>
+      </div>
+      <div className="step">
+        <div className="step-num">!</div>
+        <div className="step-body">
+          <p style={{ color: "var(--muted)" }}>{t("term.note.proxyOptional")}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CmdGuide({ path, httpAddr }: { path: string; httpAddr: string }) {
+  const t = useT();
+  const session = cmdSessionSnippet(path, httpAddr);
+  const persist = cmdPersistSnippet(path, httpAddr);
+  return (
+    <div className="guide-steps">
+      <div className="step">
+        <div className="step-num">1</div>
+        <div className="step-body">
+          <strong>{t("term.session.title")}</strong>
+          <p>{t("term.session.body")}</p>
+          <CopyBlock code={session} />
+        </div>
+      </div>
+      <div className="step">
+        <div className="step-num">2</div>
+        <div className="step-body">
+          <strong>{t("term.persist.title")}</strong>
+          <p>{t("term.persistCmd.body")}</p>
+          <CopyBlock code={persist} />
+        </div>
+      </div>
+      <div className="step">
+        <div className="step-num">!</div>
+        <div className="step-body">
+          <p style={{ color: "var(--muted)" }}>{t("term.note.proxyOptional")}</p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ToolTipsPanel({ certPath }: { certPath: string }) {
+  const t = useT();
+  const cert = certPath || "/path/to/ca.crt";
+  return (
+    <div className="card-panel" style={{ marginTop: 18 }}>
+      <div className="panel-head">
+        <Terminal size={14} /><span>{t("term.tools.title")}</span>
+      </div>
+      <div className="guide-steps" style={{ marginTop: 4 }}>
+        <div className="step">
+          <div className="step-num">N</div>
+          <div className="step-body">
+            <strong>{t("term.tools.nodeTitle")}</strong>
+            <p>{t("term.tools.nodeBody")}</p>
+          </div>
+        </div>
+        <div className="step">
+          <div className="step-num">P</div>
+          <div className="step-body">
+            <strong>{t("term.tools.pythonTitle")}</strong>
+            <p>{t("term.tools.pythonBody")}</p>
+          </div>
+        </div>
+        <div className="step">
+          <div className="step-num">G</div>
+          <div className="step-body">
+            <strong>{t("term.tools.gitTitle")}</strong>
+            <p>{t("term.tools.gitBody")}</p>
+            <CopyBlock code={`git config --global http.sslCAInfo "${cert}"`} />
+          </div>
+        </div>
+        <div className="step">
+          <div className="step-num">C</div>
+          <div className="step-body">
+            <strong>{t("term.tools.curlTitle")}</strong>
+            <p>{t("term.tools.curlBody")}</p>
+            <CopyBlock code={`curl --cacert "${cert}" https://example.com`} />
+          </div>
         </div>
       </div>
     </div>
