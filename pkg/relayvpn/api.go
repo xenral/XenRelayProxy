@@ -66,7 +66,7 @@ type Stats struct {
 	Downloads []obs.DownloadEntry `json:"downloads"`
 }
 
-const Version = "0.2.0"
+const Version = "1.3.0"
 
 // CACertInfo holds metadata about the local MITM CA certificate.
 type CACertInfo struct {
