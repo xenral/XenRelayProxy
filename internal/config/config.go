@@ -26,6 +26,7 @@ var placeholderAuthKeys = map[string]struct{}{
 
 type Config struct {
 	Mode                 string            `json:"mode"`
+	SetupCompleted       bool              `json:"setup_completed"`
 	GoogleIP             string            `json:"google_ip"`
 	FrontDomain          string            `json:"front_domain"`
 	FrontDomains         []string          `json:"front_domains,omitempty"`
