@@ -255,6 +255,106 @@ const en: Strings = {
   // Errors
   "error.boundary.title": "Something went wrong",
   "error.boundary.retry": "Try again",
+
+  // Sidebar / nav additions for wizard + python relay
+  "nav.wizard": "Setup Wizard",
+  "nav.pythonRelayGuide": "Python Relay",
+
+  // Wizard — chrome
+  "wizard.topbar.setup": "First-time setup",
+  "wizard.topbar.step": "Step {n} of {total}",
+  "wizard.close": "Close",
+  "wizard.back": "Back",
+  "wizard.next": "Next",
+  "wizard.review": "Review",
+
+  // Wizard — Welcome
+  "wizard.welcome.title": "Welcome to XenRelayProxy",
+  "wizard.welcome.body": "Let's get your relay running in four quick steps. We'll generate a key, deploy your Apps Script, install the local CA, and you're online.",
+  "wizard.welcome.cta": "Get Started",
+  "wizard.welcome.r1": "Auth key",
+  "wizard.welcome.r2": "Apps Script",
+  "wizard.welcome.r3": "Trust CA",
+  "wizard.welcome.r4": "Connect",
+
+  // Wizard — Auth
+  "wizard.auth.title": "Auth Key & Front Domain",
+  "wizard.auth.body": "We've generated a strong key for you. You'll paste it into Code.gs in the next step — keep them in sync.",
+  "wizard.auth.keyLabel": "Auth Key",
+  "wizard.auth.regenerate": "Regenerate",
+  "wizard.auth.copy": "Copy",
+  "wizard.auth.placeholderError": "Auth key cannot be empty or use a placeholder value.",
+  "wizard.auth.frontDomainRequired": "Front domain is required.",
+  "wizard.auth.help": "This shared secret authenticates your local proxy with your Apps Script deployment.",
+  "wizard.auth.frontDomainLabel": "Front Domain",
+  "wizard.auth.frontDomainHelp": "The Google-fronted hostname your proxy connects to. Default works for most users.",
+
+  // Wizard — Account + Code.gs
+  "wizard.account.title": "First Account & Apps Script",
+  "wizard.account.body": "Add your first Apps Script deployment. Every account has one or more deployment IDs the scheduler rotates between.",
+  "wizard.account.label": "Account label",
+  "wizard.account.email": "Google email",
+  "wizard.account.scriptIds": "Deployment IDs",
+  "wizard.account.scriptIdsPlaceholder": "Paste a deployment ID and press Enter",
+  "wizard.account.scriptIdsRequired": "At least one deployment ID is required.",
+  "wizard.account.quota": "Daily quota",
+  "wizard.account.googleIP": "Google front IP",
+
+  "wizard.codegs.title": "Deploy your Apps Script",
+  "wizard.codegs.body": "Open Apps Script, paste this Code.gs, replace AUTH_KEY with the key from the previous step, then deploy as a Web App.",
+  "wizard.codegs.step1": "Open Google Apps Script and create a new project:",
+  "wizard.codegs.step2": "Copy the entire Code.gs body below into your script editor.",
+  "wizard.codegs.step3": "Replace the existing Code.gs content.",
+  "wizard.codegs.step4": "Replace the AUTH_KEY constant with your key:",
+  "wizard.codegs.step5": "Deploy → New deployment → Web app → Execute as: Me · Access: Anyone.",
+  "wizard.codegs.step6": "Copy the deployment ID and paste it into the Deployment IDs field above.",
+  "wizard.codegs.copy": "Copy Code.gs",
+  "wizard.codegs.copied": "Copied",
+
+  "wizard.scan.title": "Front IP scan",
+  "wizard.scan.body": "Optional — find the fastest Google front IP from your network. We'll auto-fill the best one.",
+  "wizard.scan.cta": "Scan front IPs",
+  "wizard.scan.scanning": "Scanning…",
+  "wizard.scan.best": "Best",
+  "wizard.scan.selected": "Selected",
+
+  // Wizard — Cert
+  "wizard.cert.title": "Trust the local CA",
+  "wizard.cert.body": "XenRelayProxy intercepts HTTPS to relay it. Trust the local CA so browsers accept the proxy's certificates.",
+  "wizard.cert.install": "Install CA Certificate",
+  "wizard.cert.installing": "Installing — confirm the system prompt",
+  "wizard.cert.trusted": "CA is trusted",
+  "wizard.cert.notTrusted": "CA is not trusted yet",
+  "wizard.cert.trustedBody": "HTTPS interception will work for all browsers using this proxy.",
+  "wizard.cert.notTrustedBody": "Click Install to add the CA to your system trust store.",
+  "wizard.cert.skipNote": "You can skip this and install the CA later from the Certificate page — but HTTPS sites won't work until it's trusted.",
+
+  // Wizard — Done
+  "wizard.done.title": "You're all set",
+  "wizard.done.body": "Configuration saved. Hit Start Proxy to begin tunnelling — you can rerun this wizard anytime from the sidebar.",
+  "wizard.done.summaryAuthKey": "Auth key",
+  "wizard.done.summaryAccount": "Account",
+  "wizard.done.summaryDeployments": "deployment(s)",
+  "wizard.done.summaryFrontIP": "Google front IP",
+  "wizard.done.start": "Start Proxy",
+  "wizard.done.starting": "Starting…",
+
+  // Python relay guide
+  "guide.python.title": "Server-Side Python Relay",
+  "guide.python.optional": "Optional",
+  "guide.python.body": "Apps Script caps each fetch at ~50 MiB and burns a daily quota. If you have a VPS, run a tiny Python relay so Apps Script forwards requests to your server instead — bypasses the cap and target sites see your VPS IP.",
+  "guide.python.whyTitle": "When to use this",
+  "guide.python.why1": "Files larger than ~50 MiB fail through Apps Script alone.",
+  "guide.python.why2": "You need to pin your egress IP (e.g. region-locked services).",
+  "guide.python.why3": "You're hitting Apps Script's daily quota and want to offload heavy traffic.",
+  "guide.python.deployTitle": "Deploy on your VPS",
+  "guide.python.deploy1": "Drop relay.py on your VPS — any Linux box with Python 3.8+ works.",
+  "guide.python.deploy2": "Set RELAY_AUTH_KEY env var to a strong random string.",
+  "guide.python.deploy3": "Run it on a port your VPS can expose (default 9443). Front it with TLS via Caddy/nginx if you want HTTPS.",
+  "guide.python.deploy4": "Open the firewall for that port — only your Apps Script will hit it.",
+  "guide.python.wireTitle": "Wire it into Code.gs",
+  "guide.python.wireBody": "Edit your deployed Code.gs and set RELAY_URL plus RELAY_KEY. Apps Script will route fetches through your VPS automatically.",
+  "guide.python.docsLink": "Full design doc on GitHub",
 };
 
 const fa: Strings = {
@@ -508,6 +608,106 @@ const fa: Strings = {
   // Errors
   "error.boundary.title": "خطایی رخ داد",
   "error.boundary.retry": "تلاش مجدد",
+
+  // Sidebar / nav additions
+  "nav.wizard": "راه‌اندازی گام‌به‌گام",
+  "nav.pythonRelayGuide": "رله پایتون",
+
+  // Wizard — chrome
+  "wizard.topbar.setup": "راه‌اندازی اولیه",
+  "wizard.topbar.step": "گام {n} از {total}",
+  "wizard.close": "بستن",
+  "wizard.back": "بازگشت",
+  "wizard.next": "بعدی",
+  "wizard.review": "مرور",
+
+  // Wizard — Welcome
+  "wizard.welcome.title": "به XenRelayProxy خوش آمدید",
+  "wizard.welcome.body": "در چهار گام ساده رله شما آماده می‌شود: کلید می‌سازیم، Apps Script را مستقر می‌کنید، CA محلی را نصب می‌کنیم، و آنلاین می‌شوید.",
+  "wizard.welcome.cta": "شروع کنیم",
+  "wizard.welcome.r1": "کلید احراز",
+  "wizard.welcome.r2": "Apps Script",
+  "wizard.welcome.r3": "اعتماد به CA",
+  "wizard.welcome.r4": "اتصال",
+
+  // Wizard — Auth
+  "wizard.auth.title": "کلید احراز و دامنهٔ Front",
+  "wizard.auth.body": "یک کلید قوی برای شما ساختیم. در گام بعد آن را در Code.gs قرار دهید — این دو همیشه باید هم‌خوان باشند.",
+  "wizard.auth.keyLabel": "کلید احراز",
+  "wizard.auth.regenerate": "تولید مجدد",
+  "wizard.auth.copy": "کپی",
+  "wizard.auth.placeholderError": "کلید احراز نباید خالی یا مقدار پیش‌فرض باشد.",
+  "wizard.auth.frontDomainRequired": "دامنهٔ Front الزامی است.",
+  "wizard.auth.help": "این کلید مشترک، پروکسی محلی شما را به استقرار Apps Script شناسانده می‌کند.",
+  "wizard.auth.frontDomainLabel": "دامنهٔ Front",
+  "wizard.auth.frontDomainHelp": "دامنه‌ای از Google که پروکسی به آن متصل می‌شود. مقدار پیش‌فرض برای اکثر کاربران مناسب است.",
+
+  // Wizard — Account + Code.gs
+  "wizard.account.title": "حساب اول و Apps Script",
+  "wizard.account.body": "اولین استقرار Apps Script خود را اضافه کنید. هر حساب می‌تواند چند Deployment ID داشته باشد که زمان‌بند بین آن‌ها می‌چرخد.",
+  "wizard.account.label": "برچسب حساب",
+  "wizard.account.email": "ایمیل گوگل",
+  "wizard.account.scriptIds": "Deployment ID ها",
+  "wizard.account.scriptIdsPlaceholder": "Deployment ID را پیست کنید و Enter بزنید",
+  "wizard.account.scriptIdsRequired": "حداقل یک Deployment ID نیاز است.",
+  "wizard.account.quota": "سهمیهٔ روزانه",
+  "wizard.account.googleIP": "IP فرانت گوگل",
+
+  "wizard.codegs.title": "استقرار Apps Script",
+  "wizard.codegs.body": "Apps Script را باز کنید، این Code.gs را پیست کنید، AUTH_KEY را با کلید گام قبل جایگزین کنید، و به‌صورت Web App مستقر کنید.",
+  "wizard.codegs.step1": "Apps Script را باز کرده و یک پروژهٔ جدید بسازید:",
+  "wizard.codegs.step2": "کل محتوای Code.gs زیر را در ویرایشگر اسکریپت کپی کنید.",
+  "wizard.codegs.step3": "محتوای پیش‌فرض Code.gs را با آن جایگزین کنید.",
+  "wizard.codegs.step4": "ثابت AUTH_KEY را با کلید خود جایگزین کنید:",
+  "wizard.codegs.step5": "Deploy → New deployment → Web app → اجرا به‌عنوان: من · دسترسی: همه.",
+  "wizard.codegs.step6": "Deployment ID را کپی کرده و در فیلد بالا قرار دهید.",
+  "wizard.codegs.copy": "کپی Code.gs",
+  "wizard.codegs.copied": "کپی شد",
+
+  "wizard.scan.title": "اسکن IP فرانت",
+  "wizard.scan.body": "اختیاری — سریع‌ترین IP فرانت گوگل را از شبکهٔ شما پیدا می‌کنیم و بهترین را خودکار انتخاب می‌کنیم.",
+  "wizard.scan.cta": "اسکن IP ها",
+  "wizard.scan.scanning": "در حال اسکن…",
+  "wizard.scan.best": "بهترین",
+  "wizard.scan.selected": "انتخاب‌شده",
+
+  // Wizard — Cert
+  "wizard.cert.title": "اعتماد به CA محلی",
+  "wizard.cert.body": "XenRelayProxy ترافیک HTTPS را برای رله رهگیری می‌کند. CA محلی را اعتماد دهید تا مرورگرها گواهی‌های پروکسی را بپذیرند.",
+  "wizard.cert.install": "نصب گواهی CA",
+  "wizard.cert.installing": "در حال نصب — اعلان سیستم را تأیید کنید",
+  "wizard.cert.trusted": "CA معتبر است",
+  "wizard.cert.notTrusted": "CA هنوز معتبر نیست",
+  "wizard.cert.trustedBody": "رهگیری HTTPS برای همهٔ مرورگرها فعال است.",
+  "wizard.cert.notTrustedBody": "روی نصب کلیک کنید تا CA به trust store سیستم اضافه شود.",
+  "wizard.cert.skipNote": "می‌توانید رد شوید و بعداً از صفحهٔ گواهی نصب کنید — اما تا آن زمان سایت‌های HTTPS کار نخواهند کرد.",
+
+  // Wizard — Done
+  "wizard.done.title": "همه چیز آماده است",
+  "wizard.done.body": "تنظیمات ذخیره شد. Start Proxy را بزنید تا تونل برقرار شود — هر زمان خواستید می‌توانید این جادوگر را از نوار کناری دوباره اجرا کنید.",
+  "wizard.done.summaryAuthKey": "کلید احراز",
+  "wizard.done.summaryAccount": "حساب",
+  "wizard.done.summaryDeployments": "استقرار",
+  "wizard.done.summaryFrontIP": "IP فرانت گوگل",
+  "wizard.done.start": "شروع پروکسی",
+  "wizard.done.starting": "در حال شروع…",
+
+  // Python relay guide
+  "guide.python.title": "رله پایتون سمت سرور",
+  "guide.python.optional": "اختیاری",
+  "guide.python.body": "Apps Script برای هر fetch حدود ۵۰ مگابایت سقف دارد و سهمیهٔ روزانه می‌سوزاند. اگر VPS دارید، یک رله پایتون کوچک اجرا کنید تا Apps Script درخواست‌ها را به سرور شما بفرستد — هم سقف برداشته می‌شود و هم سایت مقصد IP سرور شما را می‌بیند.",
+  "guide.python.whyTitle": "چه زمانی نیاز است",
+  "guide.python.why1": "فایل‌های بزرگ‌تر از ~۵۰ مگابایت فقط با Apps Script کار نمی‌کنند.",
+  "guide.python.why2": "می‌خواهید IP خروج خود را پین کنید (مثلاً سرویس‌های منطقه‌ای).",
+  "guide.python.why3": "به سهمیهٔ روزانهٔ Apps Script برخورده‌اید و می‌خواهید ترافیک سنگین را آفلود کنید.",
+  "guide.python.deployTitle": "استقرار روی VPS",
+  "guide.python.deploy1": "relay.py را روی VPS قرار دهید — هر لینوکسی با پایتون ۳.۸+ کافی است.",
+  "guide.python.deploy2": "متغیر محیطی RELAY_AUTH_KEY را به یک رشتهٔ تصادفی قوی تنظیم کنید.",
+  "guide.python.deploy3": "روی پورتی اجرا کنید که VPS بتواند نمایش دهد (پیش‌فرض ۹۴۴۳). برای HTTPS از Caddy/nginx استفاده کنید.",
+  "guide.python.deploy4": "فایروال آن پورت را باز کنید — فقط Apps Script شما به آن می‌رسد.",
+  "guide.python.wireTitle": "اتصال در Code.gs",
+  "guide.python.wireBody": "Code.gs مستقرشده را ویرایش کنید و RELAY_URL و RELAY_KEY را تنظیم کنید. Apps Script به‌صورت خودکار ترافیک را از VPS شما عبور می‌دهد.",
+  "guide.python.docsLink": "مستندات کامل در GitHub",
 };
 
 const dictionaries: Record<Locale, Strings> = { en, fa };

@@ -5,10 +5,12 @@ import {
   Clock, Copy, FileText, FolderOpen, Gauge, Globe2, Home, Info,
   KeyRound, Languages, Loader2, Play, Plus, RefreshCw, Save,
   Server, Settings, ShieldCheck, ShieldOff, Square, Terminal,
-  ToggleLeft, ToggleRight, Trash2, Users, Wifi, WifiOff, X, Zap
+  ToggleLeft, ToggleRight, Trash2, Users, Wand2, Wifi, WifiOff, X, Zap
 } from "lucide-react";
 import "./styles.css";
 import { LocaleContext, translate, useT, type Locale } from "./i18n";
+import Wizard from "./Wizard";
+import PythonRelayGuide from "./PythonRelayGuide";
 
 /* ─── Types ──────────────────────────────────────────────────── */
 
@@ -83,7 +85,7 @@ type CACertInfo = {
   exists: boolean; trusted: boolean; pem: string;
 };
 
-type Screen = "home" | "accounts" | "dashboard" | "logs" | "settings" | "cert" | "terminal" | "about";
+type Screen = "home" | "accounts" | "dashboard" | "logs" | "settings" | "cert" | "terminal" | "about" | "pyrelay";
 type ToastKind = "success" | "error" | "info";
 type Toast = { id: number; kind: ToastKind; msg: string };
 
@@ -216,6 +218,8 @@ function App() {
   const [stats, setStats]   = useState<Stats | null>(null);
   const [cfg, setCfg]       = useState<Config>(BLANK_CONFIG);
   const [connecting, setConnecting] = useState(false);
+  const [showWizard, setShowWizard] = useState(false);
+  const [wizardChecked, setWizardChecked] = useState(false);
 
   const t = (key: string, vars?: Record<string, string | number>) => translate(locale, key, vars);
 
@@ -234,6 +238,10 @@ function App() {
     call<Config>("GetConfig").then(setCfg).catch(() => setCfg(BLANK_CONFIG));
     refresh();
     const id = window.setInterval(refresh, 1500);
+    // First-install gate: show wizard until setup_completed flag flips true.
+    call<boolean>("IsSetupCompleted")
+      .then((done) => { setShowWizard(!done); setWizardChecked(true); })
+      .catch(() => setWizardChecked(true));
     return () => window.clearInterval(id);
   }, []);
 
@@ -268,12 +276,28 @@ function App() {
     ["settings",  Settings,   "nav.settings"],
     ["cert",      ShieldCheck,"nav.cert"],
     ["terminal",  Terminal,   "nav.terminal"],
+    ["pyrelay",   Server,     "nav.pythonRelayGuide"],
     ["about",     BadgeInfo,  "nav.about"],
   ];
 
   return (
     <LocaleContext.Provider value={locale}>
       <ToastContainer />
+      {wizardChecked && showWizard && (
+        <Wizard
+          locale={locale}
+          onLocaleChange={changeLocale}
+          onComplete={async () => {
+            setShowWizard(false);
+            try {
+              const fresh = await call<Config>("GetConfig");
+              setCfg(fresh);
+            } catch {}
+            await refresh();
+          }}
+          onClose={() => setShowWizard(false)}
+        />
+      )}
       <div className="app" dir={locale === "fa" ? "rtl" : "ltr"}>
         <aside className="sidebar">
           <div className="brand">
@@ -290,6 +314,10 @@ function App() {
               </button>
             ))}
           </nav>
+          <button className="sidebar-rerun" onClick={() => setShowWizard(true)}>
+            <Wand2 size={14} />
+            <span>{t("nav.wizard")}</span>
+          </button>
           <button className="lang" onClick={() => changeLocale(locale === "en" ? "fa" : "en")}>
             <Languages size={15} />
             <span>{t("lang.toggle")}</span>
@@ -322,6 +350,7 @@ function App() {
             {screen === "settings"  && <SettingsView cfg={cfg} setCfg={setCfg} refresh={refresh} />}
             {screen === "cert"      && <CACertView status={status} />}
             {screen === "terminal"  && <TerminalGuideView status={status} />}
+            {screen === "pyrelay"   && <PythonRelayGuide />}
             {screen === "about"     && <AboutView version={status?.version ?? "0.2.0"} />}
           </ErrorBoundary>
         </main>
