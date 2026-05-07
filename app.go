@@ -11,8 +11,9 @@ import (
 )
 
 type App struct {
-	ctx context.Context
-	api *relayvpn.API
+	ctx    context.Context
+	api    *relayvpn.API
+	codeGS string
 }
 
 func NewApp() *App {
@@ -107,4 +108,20 @@ func (a *App) GetCACertInfo() relayvpn.CACertInfo {
 
 func (a *App) RevealCACert() error {
 	return a.api.RevealCACert()
+}
+
+func (a *App) IsSetupCompleted() bool {
+	return a.api.IsSetupCompleted()
+}
+
+func (a *App) MarkSetupCompleted() error {
+	return a.api.MarkSetupCompleted()
+}
+
+func (a *App) GenerateAuthKey() (string, error) {
+	return a.api.GenerateAuthKey()
+}
+
+func (a *App) GetCodeGS() string {
+	return a.codeGS
 }

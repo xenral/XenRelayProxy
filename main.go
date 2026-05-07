@@ -12,8 +12,12 @@ import (
 //go:embed all:frontend/dist
 var assets embed.FS
 
+//go:embed apps_script/Code.gs
+var codeGS string
+
 func main() {
 	app := NewApp()
+	app.codeGS = codeGS
 	err := wails.Run(&options.App{
 		Title:  "XenRelayProxy",
 		Width:  1180,

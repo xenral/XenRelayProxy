@@ -323,6 +323,41 @@ func (a *API) ScanFrontIPs(ctx context.Context) ([]frontscan.Result, error) {
 	return frontscan.Scan(ctx, cfg.FrontDomain, nil)
 }
 
+// IsSetupCompleted reports whether the user has finished the first-install
+// wizard. Defaults to false when there is no config file yet.
+func (a *API) IsSetupCompleted() bool {
+	cfg, err := config.Load(a.configPath)
+	if err != nil {
+		return false
+	}
+	return cfg.SetupCompleted
+}
+
+// MarkSetupCompleted flips the setup_completed flag and persists the config.
+// Uses SaveDraft so it does not run validation — the wizard already validates
+// each step inline.
+func (a *API) MarkSetupCompleted() error {
+	cfg, err := a.GetConfig()
+	if err != nil {
+		return err
+	}
+	cfg.SetupCompleted = true
+	if err := config.SaveDraft(a.configPath, cfg); err != nil {
+		return err
+	}
+	a.mu.Lock()
+	a.cfg = cfg
+	a.mu.Unlock()
+	a.logs.Add(obs.LevelInfo, "config", "setup completed")
+	return nil
+}
+
+// GenerateAuthKey returns a fresh random base64 auth key. Does not persist —
+// the wizard saves it as part of SaveConfig once the user accepts it.
+func (a *API) GenerateAuthKey() (string, error) {
+	return config.GenerateAuthKey()
+}
+
 func (a *API) ToggleAccount(label string, enabled bool) error {
 	if label == "" {
 		return errors.New("label is required")
