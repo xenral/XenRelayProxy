@@ -159,10 +159,31 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 		s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("file too large: %d bytes (cap %d)", total, s.cfg.MaxResponseBodyBytes))
 		return true, fmt.Errorf("file too large: %d bytes", total)
 	}
+	// First chunk is what the probe already fetched; later chunks may use a
+	// larger size if the configured chunk count cap would be exceeded. Scaling
+	// up — instead of refusing — turns DownloadMaxChunks into a sizing knob
+	// rather than a hard file-size ceiling.
+	firstChunkSize := chunkSize
 	chunks := int((total + chunkSize - 1) / chunkSize)
 	if s.cfg.DownloadMaxChunks > 0 && chunks > s.cfg.DownloadMaxChunks {
-		s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("too many chunks: %d (max %d)", chunks, s.cfg.DownloadMaxChunks))
-		return true, fmt.Errorf("file requires %d chunks, max is %d", chunks, s.cfg.DownloadMaxChunks)
+		// Pick a chunk size that fits the rest of the file in (cap-1) chunks.
+		remainingCap := int64(s.cfg.DownloadMaxChunks - 1)
+		if remainingCap < 1 {
+			remainingCap = 1
+		}
+		remainingBytes := total - firstChunkSize
+		newChunkSize := (remainingBytes + remainingCap - 1) / remainingCap
+		if newChunkSize < firstChunkSize {
+			newChunkSize = firstChunkSize
+		}
+		s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("auto-scaling chunk size %d → %d to keep chunks ≤ %d (file %d bytes)", chunkSize, newChunkSize, s.cfg.DownloadMaxChunks, total))
+		chunkSize = newChunkSize
+		// Recompute total chunk count: 1 first chunk + remaining at new size.
+		if remainingBytes <= 0 {
+			chunks = 1
+		} else {
+			chunks = 1 + int((remainingBytes+chunkSize-1)/chunkSize)
+		}
 	}
 
 	// Read first chunk body.
@@ -218,7 +239,7 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 	var wg sync.WaitGroup
 	for i := 0; i < remaining; i++ {
 		chunkIdx := i + 1
-		start := int64(chunkIdx) * chunkSize
+		start := firstChunkSize + int64(i)*chunkSize
 		end := start + chunkSize - 1
 		if end >= total {
 			end = total - 1
