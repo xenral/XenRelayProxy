@@ -268,10 +268,19 @@ const en: Strings = {
   "wizard.next": "Next",
   "wizard.review": "Review",
 
+  // Wizard — Step rail
+  "wizard.rail.title": "Setup steps",
+  "wizard.rail.welcome": "Welcome",
+  "wizard.rail.auth": "Auth key",
+  "wizard.rail.account": "Account",
+  "wizard.rail.cert": "Trust CA",
+  "wizard.rail.done": "Finish",
+
   // Wizard — Welcome
   "wizard.welcome.title": "Welcome to XenRelayProxy",
   "wizard.welcome.body": "Let's get your relay running in four quick steps. We'll generate a key, deploy your Apps Script, install the local CA, and you're online.",
   "wizard.welcome.cta": "Get Started",
+  "wizard.welcome.lang": "Language",
   "wizard.welcome.r1": "Auth key",
   "wizard.welcome.r2": "Apps Script",
   "wizard.welcome.r3": "Trust CA",
@@ -621,10 +630,19 @@ const fa: Strings = {
   "wizard.next": "بعدی",
   "wizard.review": "مرور",
 
+  // Wizard — Step rail
+  "wizard.rail.title": "گام‌های راه‌اندازی",
+  "wizard.rail.welcome": "خوش‌آمد",
+  "wizard.rail.auth": "کلید احراز",
+  "wizard.rail.account": "حساب",
+  "wizard.rail.cert": "اعتماد به CA",
+  "wizard.rail.done": "پایان",
+
   // Wizard — Welcome
   "wizard.welcome.title": "به XenRelayProxy خوش آمدید",
   "wizard.welcome.body": "در چهار گام ساده رله شما آماده می‌شود: کلید می‌سازیم، Apps Script را مستقر می‌کنید، CA محلی را نصب می‌کنیم، و آنلاین می‌شوید.",
   "wizard.welcome.cta": "شروع کنیم",
+  "wizard.welcome.lang": "زبان",
   "wizard.welcome.r1": "کلید احراز",
   "wizard.welcome.r2": "Apps Script",
   "wizard.welcome.r3": "اعتماد به CA",
