@@ -66,7 +66,7 @@ type Stats struct {
 	Downloads []obs.DownloadEntry `json:"downloads"`
 }
 
-const Version = "1.3.5"
+const Version = "1.3.6"
 
 // CACertInfo holds metadata about the local MITM CA certificate.
 type CACertInfo struct {
@@ -321,6 +321,19 @@ func (a *API) ScanFrontIPs(ctx context.Context) ([]frontscan.Result, error) {
 	}
 	a.logs.Add(obs.LevelInfo, "scanner", "scanning Google frontend IPs")
 	return frontscan.Scan(ctx, cfg.FrontDomain, nil)
+}
+
+// CancelDownload aborts an in-flight chunked download by ID. Returns nil
+// when the download was active and got cancelled, or an error otherwise.
+func (a *API) CancelDownload(id string) error {
+	if id == "" {
+		return errors.New("download id is required")
+	}
+	if !a.downloads.Cancel(id) {
+		return fmt.Errorf("download %q not active", id)
+	}
+	a.logs.Add(obs.LevelInfo, "download", "cancelled "+id+" via UI")
+	return nil
 }
 
 // IsSetupCompleted reports whether the user has finished the first-install

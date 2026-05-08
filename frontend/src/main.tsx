@@ -73,7 +73,7 @@ type DownloadInfo = {
   id: string; url: string; filename: string;
   total_bytes: number; done_bytes: number;
   chunks: number; done_chunks: number;
-  status: "active" | "done" | "failed";
+  status: "active" | "done" | "failed" | "cancelled";
   error?: string; started_at: string; bytes_per_sec: number;
 };
 
@@ -288,7 +288,7 @@ function App() {
             <div className="brand-icon"><ShieldCheck size={16} color="#fff" /></div>
             <div>
               <strong>XenRelayProxy</strong>
-              <span>v{status?.version ?? "1.3.5"}</span>
+              <span>v{status?.version ?? "1.3.6"}</span>
             </div>
           </div>
           <nav>
@@ -345,7 +345,7 @@ function App() {
               />
             )}
             {screen === "pyrelay"   && <PythonRelayGuide />}
-            {screen === "about"     && <AboutView version={status?.version ?? "1.3.5"} />}
+            {screen === "about"     && <AboutView version={status?.version ?? "1.3.6"} />}
           </ErrorBoundary>
         </main>
       </div>
@@ -496,6 +496,22 @@ function HomeView({ status, stats, onConnect, connecting }: {
                   <span className="dl-size">
                     {fmtBytes(dl.done_bytes)} / {fmtBytes(dl.total_bytes)}
                   </span>
+                  {dl.status === "active" && (
+                    <button
+                      className="dl-cancel"
+                      title={t("dl.cancel")}
+                      onClick={async () => {
+                        try {
+                          await call("CancelDownload", dl.id);
+                          toast("info", t("toast.dlCancelled"));
+                        } catch (err) {
+                          toast("error", String(err));
+                        }
+                      }}
+                    >
+                      <X size={12} />
+                    </button>
+                  )}
                 </div>
                 <div className="dl-bar-track">
                   <div
@@ -510,6 +526,7 @@ function HomeView({ status, stats, onConnect, connecting }: {
                   )}
                   {dl.status === "done" && <span className="dl-done">{t("dl.complete")}</span>}
                   {dl.status === "failed" && <span className="dl-err">{dl.error || t("dl.failed")}</span>}
+                  {dl.status === "cancelled" && <span className="dl-cancelled">{t("dl.cancelled")}</span>}
                   <span>{Math.round(dl.total_bytes > 0 ? (dl.done_bytes / dl.total_bytes) * 100 : 0)}%</span>
                 </div>
               </div>

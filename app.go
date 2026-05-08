@@ -125,3 +125,7 @@ func (a *App) GenerateAuthKey() (string, error) {
 func (a *App) GetCodeGS() string {
 	return a.codeGS
 }
+
+func (a *App) CancelDownload(id string) error {
+	return a.api.CancelDownload(id)
+}

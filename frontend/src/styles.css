@@ -504,6 +504,7 @@ header p  { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 }
 .dl-item.dl-done  { border-color: var(--success); opacity: 0.7; }
 .dl-item.dl-failed { border-color: var(--danger); }
+.dl-item.dl-cancelled { border-color: var(--muted); opacity: 0.6; }
 .dl-row {
   display: flex; align-items: center; justify-content: space-between;
   font-size: 12.5px;
@@ -525,6 +526,21 @@ header p  { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
 .dl-bar-active { background: var(--primary); }
 .dl-bar-done   { background: var(--success); }
 .dl-bar-failed { background: var(--danger); }
+.dl-bar-cancelled { background: var(--muted); }
+
+.dl-cancel {
+  display: inline-grid; place-items: center;
+  width: 22px; height: 22px;
+  margin-left: 6px;
+  border-radius: 50%;
+  background: rgba(248,113,113,.12);
+  border: 1px solid rgba(248,113,113,.28);
+  color: var(--danger);
+  flex-shrink: 0;
+  transition: background var(--t), border-color var(--t);
+}
+.dl-cancel:hover { background: rgba(248,113,113,.22); border-color: var(--danger); }
+.dl-cancelled { color: var(--muted); font-weight: 600; font-size: 11px; }
 .dl-meta { font-size: 11px; color: var(--muted); }
 .dl-done { color: var(--success); font-weight: 600; }
 .dl-err  { color: var(--danger); font-size: 11px; max-width: 50%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }

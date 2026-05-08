@@ -1,6 +1,7 @@
 package listener
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -260,9 +261,15 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 		chunks = computeChunks(total, firstChunkSize, chunkSize)
 	}
 
-	// Register download for progress tracking.
+	// Register download for progress tracking. Wire a cancellable context
+	// so the user (UI cancel button) or a browser disconnect can abort the
+	// in-flight chunk fetches without leaving the proxy downloading bytes
+	// the client no longer wants.
 	dlID := s.downloads.NextID()
 	s.downloads.Start(dlID, req.URL.String(), filename, total, chunks)
+	dlCtx, dlCancel := context.WithCancel(req.Context())
+	defer dlCancel()
+	s.downloads.SetCancel(dlID, dlCancel)
 	mode := "streaming"
 	if tooLargeSize > 0 {
 		mode = "streaming (too_large retry)"
@@ -335,10 +342,19 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 		wg.Add(1)
 		go func(idx int, start, end int64, ch chan<- chunkResult) {
 			defer wg.Done()
-			sem <- struct{}{}
+			select {
+			case sem <- struct{}{}:
+			case <-dlCtx.Done():
+				ch <- chunkResult{err: dlCtx.Err()}
+				return
+			}
 			defer func() { <-sem }()
+			if dlCtx.Err() != nil {
+				ch <- chunkResult{err: dlCtx.Err()}
+				return
+			}
 			partReq := cloneRangeRequestForURL(req, currentURL, start, end)
-			partResp, err := s.relay.Do(req.Context(), partReq)
+			partResp, err := s.relay.Do(dlCtx, partReq)
 			if err != nil {
 				ch <- chunkResult{err: fmt.Errorf("chunk %d/%d failed: %w", idx+1, chunks, err)}
 				return
@@ -357,16 +373,21 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 		}(chunkIdx, start, end, ready[i])
 	}
 
-	// Stream chunks to the browser in order as they become ready.
+	// Stream chunks to the browser in order as they become ready. Any write
+	// error or upstream chunk error cancels the shared dlCtx so in-flight
+	// goroutines abort instead of continuing to fetch bytes the client no
+	// longer wants.
 	var streamErr error
 	for i := 0; i < remaining; i++ {
 		res := <-ready[i]
 		if res.err != nil {
 			streamErr = res.err
+			dlCancel()
 			break
 		}
 		if err := sw.WriteBody(res.data); err != nil {
 			streamErr = fmt.Errorf("write to client: %w", err)
+			dlCancel()
 			break
 		}
 		_ = sw.Flush()
@@ -378,6 +399,17 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 	wg.Wait()
 
 	if streamErr != nil {
+		// User-driven cancellation (UI or browser disconnect) shows up as a
+		// context.Canceled inside streamErr — surface it as a "cancelled"
+		// status, not a failure.
+		if errors.Is(streamErr, context.Canceled) || isBrowserDisconnect(streamErr) {
+			s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("%s cancelled: %s", dlID, filename))
+			// Cancel() may have already set status; if not (e.g. write error
+			// triggered cancel), set it now.
+			s.downloads.Cancel(dlID)
+			s.cleanupDownload(dlID)
+			return true, streamErr
+		}
 		s.downloads.Fail(dlID, streamErr.Error())
 		s.logs.Add(obs.LevelError, "download", fmt.Sprintf("%s failed: %s", dlID, streamErr.Error()))
 		s.cleanupDownload(dlID)
@@ -452,6 +484,25 @@ func cloneRangeRequestForURL(req *http.Request, u *url.URL, start, end int64) *h
 	clone.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
 	clone.RequestURI = ""
 	return clone
+}
+
+// isBrowserDisconnect reports whether err looks like a normal client-side
+// connection close (broken pipe, reset, EOF on write). These are expected
+// when the user cancels the download in the browser and should be treated
+// as cancellations, not internal failures.
+func isBrowserDisconnect(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, io.ErrClosedPipe) || errors.Is(err, io.EOF) {
+		return true
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "broken pipe") ||
+		strings.Contains(msg, "connection reset by peer") ||
+		strings.Contains(msg, "use of closed network connection") ||
+		strings.Contains(msg, "client disconnected") ||
+		strings.Contains(msg, "context canceled")
 }
 
 // computeChunks returns the number of chunks needed to cover total bytes

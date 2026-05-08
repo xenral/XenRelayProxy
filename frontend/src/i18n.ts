@@ -37,6 +37,7 @@ const en: Strings = {
   "toast.caInstalled": "CA installed. Restart Chrome/Safari to apply.",
   "toast.caRemoved": "CA certificate removed.",
   "toast.pemCopied": "PEM copied to clipboard.",
+  "toast.dlCancelled": "Download cancelled.",
 
   // Home / hero
   "hero.establishing": "Establishing tunnel…",
@@ -251,6 +252,8 @@ const en: Strings = {
   "dl.chunks": "chunks",
   "dl.complete": "Complete",
   "dl.failed": "Failed",
+  "dl.cancel": "Cancel download",
+  "dl.cancelled": "Cancelled",
 
   // Errors
   "error.boundary.title": "Something went wrong",
@@ -399,6 +402,7 @@ const fa: Strings = {
   "toast.caInstalled": "گواهی نصب شد. برای اعمال، Chrome/Safari را مجدد راه‌اندازی کنید.",
   "toast.caRemoved": "گواهی حذف شد.",
   "toast.pemCopied": "PEM در کلیپ‌بورد کپی شد.",
+  "toast.dlCancelled": "دانلود لغو شد.",
 
   // Home / hero
   "hero.establishing": "در حال برقراری تونل…",
@@ -613,6 +617,8 @@ const fa: Strings = {
   "dl.chunks": "قطعه",
   "dl.complete": "تکمیل",
   "dl.failed": "ناموفق",
+  "dl.cancel": "لغو دانلود",
+  "dl.cancelled": "لغو شد",
 
   // Errors
   "error.boundary.title": "خطایی رخ داد",

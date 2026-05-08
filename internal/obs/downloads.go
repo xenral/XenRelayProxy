@@ -9,9 +9,10 @@ import (
 type DownloadStatus string
 
 const (
-	DownloadActive   DownloadStatus = "active"
-	DownloadDone     DownloadStatus = "done"
-	DownloadFailed   DownloadStatus = "failed"
+	DownloadActive    DownloadStatus = "active"
+	DownloadDone      DownloadStatus = "done"
+	DownloadFailed    DownloadStatus = "failed"
+	DownloadCancelled DownloadStatus = "cancelled"
 )
 
 type DownloadEntry struct {
@@ -29,16 +30,17 @@ type DownloadEntry struct {
 }
 
 type activeDownload struct {
-	id        string
-	url       string
-	filename  string
-	total     int64
-	done      atomic.Int64
-	chunks    int
+	id         string
+	url        string
+	filename   string
+	total      int64
+	done       atomic.Int64
+	chunks     int
 	doneChunks atomic.Int32
-	status    DownloadStatus
-	errMsg    string
-	startedAt time.Time
+	status     DownloadStatus
+	errMsg     string
+	startedAt  time.Time
+	cancel     func() // optional; invoked by Cancel to abort in-flight chunk fetches
 }
 
 type Downloads struct {
@@ -105,6 +107,37 @@ func (d *Downloads) Remove(id string) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	delete(d.active, id)
+}
+
+// SetCancel registers a cancel function that will be called when Cancel
+// is invoked for this download. Called once after Start.
+func (d *Downloads) SetCancel(id string, fn func()) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if dl, ok := d.active[id]; ok {
+		dl.cancel = fn
+	}
+}
+
+// Cancel marks the download cancelled and invokes its registered cancel
+// function (if any) to abort in-flight chunk fetches. Returns true when
+// the download was active and got cancelled, false when not found or
+// already finished.
+func (d *Downloads) Cancel(id string) bool {
+	d.mu.Lock()
+	dl, ok := d.active[id]
+	if !ok || dl.status != DownloadActive {
+		d.mu.Unlock()
+		return false
+	}
+	dl.status = DownloadCancelled
+	dl.errMsg = "cancelled"
+	cancel := dl.cancel
+	d.mu.Unlock()
+	if cancel != nil {
+		cancel()
+	}
+	return true
 }
 
 func (d *Downloads) NextID() string {
