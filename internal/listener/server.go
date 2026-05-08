@@ -360,7 +360,7 @@ func (s *Server) responseFor(req *http.Request) (*http.Response, error) {
 		return nil, err
 	}
 	if int64(len(body)) > s.cfg.MaxResponseBodyBytes {
-		err := fmt.Errorf("relay response too large: %d bytes", len(body))
+		err := fmt.Errorf("relay response too large [server-buffer]: %d bytes > max_response_body_bytes %d", len(body), s.cfg.MaxResponseBodyBytes)
 		s.logs.Add(obs.LevelError, "relay", fmt.Sprintf("%s %s → %s", req.Method, req.URL.String(), err.Error()))
 		s.metrics.Record(host, 0, 0, time.Since(start), err)
 		return nil, err

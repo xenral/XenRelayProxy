@@ -183,7 +183,7 @@ func (c *Client) postJSON(ctx context.Context, account *scheduler.Account, paylo
 		return body, err
 	}
 	if int64(len(body)) > c.cfg.MaxResponseBodyBytes {
-		return body, fmt.Errorf("relay response too large: %d bytes", len(body))
+		return body, fmt.Errorf("relay response too large [client-buffer]: %d bytes > max_response_body_bytes %d", len(body), c.cfg.MaxResponseBodyBytes)
 	}
 	if resp.StatusCode >= 500 {
 		return body, fmt.Errorf("relay HTTP %d: %s", resp.StatusCode, stringPrefix(body, 200))

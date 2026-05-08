@@ -117,11 +117,44 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 	filename := filenameFromURL(req.URL)
 	s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("probing %s (%s)", req.URL.String(), filename))
 
-	probeReq := cloneRangeRequest(req, 0, chunkSize-1)
-	probeResp, err := s.relay.Do(req.Context(), probeReq)
-	if err != nil {
-		s.logs.Add(obs.LevelError, "download", "probe failed for "+req.URL.String()+": "+err.Error())
-		return false, nil // let normal relay handle it
+	// Probe the URL — chasing redirects ourselves up to maxHops so the chunked
+	// path can run end-to-end on the resolved URL instead of bouncing the
+	// browser through a redirect that may land on a non-chunkable handler.
+	const maxHops = 5
+	currentURL := req.URL
+	var probeResp *http.Response
+	for hop := 0; hop <= maxHops; hop++ {
+		probeReq := cloneRangeRequestForURL(req, currentURL, 0, chunkSize-1)
+		resp, err := s.relay.Do(req.Context(), probeReq)
+		if err != nil {
+			s.logs.Add(obs.LevelError, "download", "probe failed for "+currentURL.String()+": "+err.Error())
+			return false, nil // let normal relay handle it
+		}
+		if isRedirect(resp.StatusCode) {
+			loc := resp.Header.Get("Location")
+			_ = resp.Body.Close()
+			if loc == "" {
+				s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("probe %s: %d without Location, falling back", currentURL.String(), resp.StatusCode))
+				return false, nil
+			}
+			next, err := currentURL.Parse(loc)
+			if err != nil {
+				s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("probe %s: bad Location %q: %s", currentURL.String(), loc, err.Error()))
+				return false, nil
+			}
+			s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("probe %d redirect → %s", resp.StatusCode, next.String()))
+			currentURL = next
+			if hop == maxHops {
+				s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("probe redirect limit (%d) exceeded, falling back", maxHops))
+				return false, nil
+			}
+			continue
+		}
+		probeResp = resp
+		break
+	}
+	if probeResp == nil {
+		return false, nil
 	}
 	defer probeResp.Body.Close()
 
@@ -129,7 +162,7 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 	// a download and try to return it directly (server doesn't support Range).
 	if probeResp.StatusCode != http.StatusPartialContent {
 		if probeResp.StatusCode == http.StatusOK && isDownloadResponse(probeResp.Header) {
-			s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("probe %s: got 200 with download headers, streaming single response", req.URL.String()))
+			s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("probe %s: got 200 with download headers, streaming single response", currentURL.String()))
 			body, err := io.ReadAll(probeResp.Body)
 			if err != nil {
 				s.logs.Add(obs.LevelError, "download", "failed reading 200 body: "+err.Error())
@@ -143,7 +176,7 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 			}
 			return true, nil
 		}
-		s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("probe %s: server returned %d (not 206), falling back to normal relay", req.URL.String(), probeResp.StatusCode))
+		s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("probe %s: server returned %d (not 206), falling back to normal relay", currentURL.String(), probeResp.StatusCode))
 		return false, nil
 	}
 	total, err := parseTotalFromContentRange(probeResp.Header.Get("Content-Range"))
@@ -156,8 +189,8 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 		return false, nil
 	}
 	if total > s.cfg.MaxResponseBodyBytes {
-		s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("file too large: %d bytes (cap %d)", total, s.cfg.MaxResponseBodyBytes))
-		return true, fmt.Errorf("file too large: %d bytes", total)
+		s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("file too large [chunked-cap]: %d bytes > max_response_body_bytes %d — raise this in Settings → Downloads", total, s.cfg.MaxResponseBodyBytes))
+		return true, fmt.Errorf("file too large: %d bytes (cap %d, configured by max_response_body_bytes)", total, s.cfg.MaxResponseBodyBytes)
 	}
 	// First chunk is what the probe already fetched; later chunks may use a
 	// larger size if the configured chunk count cap would be exceeded. Scaling
@@ -249,7 +282,7 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 			defer wg.Done()
 			sem <- struct{}{}
 			defer func() { <-sem }()
-			partReq := cloneRangeRequest(req, start, end)
+			partReq := cloneRangeRequestForURL(req, currentURL, start, end)
 			partResp, err := s.relay.Do(req.Context(), partReq)
 			if err != nil {
 				ch <- chunkResult{err: fmt.Errorf("chunk %d/%d failed: %w", idx+1, chunks, err)}
@@ -346,13 +379,38 @@ func isDownloadResponse(header http.Header) bool {
 }
 
 func cloneRangeRequest(req *http.Request, start, end int64) *http.Request {
+	return cloneRangeRequestForURL(req, req.URL, start, end)
+}
+
+// cloneRangeRequestForURL returns a clone of req with its URL retargeted
+// (used when chasing redirects during the chunked-download probe) and a
+// Range header set for [start, end].
+func cloneRangeRequestForURL(req *http.Request, u *url.URL, start, end int64) *http.Request {
 	clone := req.Clone(req.Context())
+	clone.URL = u
+	if u != nil {
+		clone.Host = u.Host
+	}
 	clone.Body = nil
 	clone.ContentLength = 0
 	clone.Header = req.Header.Clone()
 	clone.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
 	clone.RequestURI = ""
 	return clone
+}
+
+// isRedirect reports whether status is one of the HTTP redirect codes that
+// carry a Location header we can follow with a GET-equivalent request.
+func isRedirect(status int) bool {
+	switch status {
+	case http.StatusMovedPermanently,    // 301
+		http.StatusFound,                 // 302
+		http.StatusSeeOther,              // 303
+		http.StatusTemporaryRedirect,     // 307
+		http.StatusPermanentRedirect:     // 308
+		return true
+	}
+	return false
 }
 
 func parseTotalFromContentRange(value string) (int64, error) {
