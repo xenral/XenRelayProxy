@@ -181,12 +181,41 @@ func ParseSingle(data []byte) (Reply, error) {
 		return Reply{}, err
 	}
 	if reply.E != "" {
+		if reply.E == "too_large" {
+			return reply, &TooLargeError{
+				Size:    extractSizeFromReply(data, reply),
+				Headers: replyHeadersToHTTPHeader(reply.H),
+			}
+		}
 		return reply, RelayError(reply.E)
 	}
 	if reply.S == 0 {
 		return Reply{}, fmt.Errorf("relay reply missing status")
 	}
 	return reply, nil
+}
+
+// replyHeadersToHTTPHeader best-effort decodes the H map into http.Header
+// so callers (e.g. chunked-download retry) can read upstream metadata.
+func replyHeadersToHTTPHeader(h map[string]json.RawMessage) http.Header {
+	if len(h) == 0 {
+		return nil
+	}
+	out := http.Header{}
+	for k, raw := range h {
+		var s string
+		if err := json.Unmarshal(raw, &s); err == nil {
+			out.Set(k, s)
+			continue
+		}
+		var arr []string
+		if err := json.Unmarshal(raw, &arr); err == nil {
+			for _, v := range arr {
+				out.Add(k, v)
+			}
+		}
+	}
+	return out
 }
 
 func ParseBatch(data []byte, expected int) ([]Reply, error) {
@@ -361,6 +390,61 @@ func ResponseFromReply(req *http.Request, reply Reply) (*http.Response, error) {
 type RelayError string
 
 func (e RelayError) Error() string { return string(e) }
+
+// TooLargeError is returned by ParseSingle / ParseBatch when the relay
+// server signals that the upstream response exceeded its per-call cap
+// (e: "too_large"). It carries the upstream-declared size (taken from
+// the relay's `size` field, falling back to the Content-Length header
+// in the H map) so callers can attempt a chunked retry.
+type TooLargeError struct {
+	Size    int64
+	Headers http.Header
+}
+
+func (e *TooLargeError) Error() string {
+	if e == nil {
+		return "too_large"
+	}
+	if e.Size > 0 {
+		return fmt.Sprintf("too_large: upstream response is %d bytes (relay per-call cap exceeded)", e.Size)
+	}
+	return "too_large: upstream response exceeds relay per-call cap"
+}
+
+// extractSizeFromReply returns the upstream-declared size from a too_large
+// reply. Prefers the relay's `size` numeric field if present, then falls
+// back to Content-Length in the H map.
+func extractSizeFromReply(raw []byte, reply Reply) int64 {
+	// Try parsing top-level "size" field first — relay.py emits it as a
+	// JSON number alongside the e/h fields.
+	var sized struct {
+		Size int64 `json:"size"`
+	}
+	if err := json.Unmarshal(raw, &sized); err == nil && sized.Size > 0 {
+		return sized.Size
+	}
+	// Fall back to Content-Length header.
+	if reply.H != nil {
+		for k, raw := range reply.H {
+			if !strings.EqualFold(k, "content-length") {
+				continue
+			}
+			var s string
+			if err := json.Unmarshal(raw, &s); err == nil {
+				if v, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err == nil && v > 0 {
+					return v
+				}
+			}
+			var arr []string
+			if err := json.Unmarshal(raw, &arr); err == nil && len(arr) > 0 {
+				if v, err := strconv.ParseInt(strings.TrimSpace(arr[0]), 10, 64); err == nil && v > 0 {
+					return v
+				}
+			}
+		}
+	}
+	return 0
+}
 
 func readBody(body io.ReadCloser, max int64) ([]byte, error) {
 	if body == nil {

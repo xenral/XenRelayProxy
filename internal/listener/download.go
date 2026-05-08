@@ -1,6 +1,7 @@
 package listener
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"time"
 
 	"xenrelayproxy/internal/obs"
+	"xenrelayproxy/internal/protocol"
 )
 
 // streamWriter abstracts writing an HTTP response so the same download logic
@@ -123,10 +125,22 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 	const maxHops = 5
 	currentURL := req.URL
 	var probeResp *http.Response
+	// tooLargeSize is set when the relay reported the upstream response was
+	// too big for its per-call cap. In that case we don't have a probe body,
+	// but we do know the total file size and can chunk by Range from scratch.
+	var tooLargeSize int64
+	var probeHeader http.Header
 	for hop := 0; hop <= maxHops; hop++ {
 		probeReq := cloneRangeRequestForURL(req, currentURL, 0, chunkSize-1)
 		resp, err := s.relay.Do(req.Context(), probeReq)
 		if err != nil {
+			var tle *protocol.TooLargeError
+			if errors.As(err, &tle) && tle.Size > 0 {
+				s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("probe %s: relay reported too_large (%d bytes) — switching to chunked retry", currentURL.String(), tle.Size))
+				tooLargeSize = tle.Size
+				probeHeader = tle.Headers
+				break
+			}
 			s.logs.Add(obs.LevelError, "download", "probe failed for "+currentURL.String()+": "+err.Error())
 			return false, nil // let normal relay handle it
 		}
@@ -153,36 +167,54 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 		probeResp = resp
 		break
 	}
-	if probeResp == nil {
-		return false, nil
-	}
-	defer probeResp.Body.Close()
 
-	// If probe got a 200 instead of 206, check if the response looks like
-	// a download and try to return it directly (server doesn't support Range).
-	if probeResp.StatusCode != http.StatusPartialContent {
-		if probeResp.StatusCode == http.StatusOK && isDownloadResponse(probeResp.Header) {
-			s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("probe %s: got 200 with download headers, streaming single response", currentURL.String()))
-			body, err := io.ReadAll(probeResp.Body)
-			if err != nil {
-				s.logs.Add(obs.LevelError, "download", "failed reading 200 body: "+err.Error())
-				return true, err
-			}
-			if err := sw.WriteHeaders(http.StatusOK, probeResp.Header, int64(len(body))); err != nil {
-				return true, err
-			}
-			if err := sw.WriteBody(body); err != nil {
-				return true, err
-			}
-			return true, nil
-		}
-		s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("probe %s: server returned %d (not 206), falling back to normal relay", currentURL.String(), probeResp.StatusCode))
+	if tooLargeSize == 0 && probeResp == nil {
 		return false, nil
 	}
-	total, err := parseTotalFromContentRange(probeResp.Header.Get("Content-Range"))
-	if err != nil || total <= 0 {
-		s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("probe %s: could not parse Content-Range %q, falling back", req.URL.String(), probeResp.Header.Get("Content-Range")))
-		return false, nil
+
+	// Branch for the too_large path: synthesize the values that the normal
+	// 206 path would have produced and skip the probe-body-as-first-chunk
+	// optimization. firstChunkBody is left empty, so the chunk loop fetches
+	// the full file via Range requests starting at offset 0.
+	var firstChunkBody []byte
+	var total int64
+	var responseHeader http.Header
+	if tooLargeSize > 0 {
+		total = tooLargeSize
+		responseHeader = probeHeader
+		if responseHeader == nil {
+			responseHeader = http.Header{}
+		}
+	} else {
+		defer probeResp.Body.Close()
+		// If probe got a 200 instead of 206, check if the response looks like
+		// a download and try to return it directly (server doesn't support Range).
+		if probeResp.StatusCode != http.StatusPartialContent {
+			if probeResp.StatusCode == http.StatusOK && isDownloadResponse(probeResp.Header) {
+				s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("probe %s: got 200 with download headers, streaming single response", currentURL.String()))
+				body, err := io.ReadAll(probeResp.Body)
+				if err != nil {
+					s.logs.Add(obs.LevelError, "download", "failed reading 200 body: "+err.Error())
+					return true, err
+				}
+				if err := sw.WriteHeaders(http.StatusOK, probeResp.Header, int64(len(body))); err != nil {
+					return true, err
+				}
+				if err := sw.WriteBody(body); err != nil {
+					return true, err
+				}
+				return true, nil
+			}
+			s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("probe %s: server returned %d (not 206), falling back to normal relay", currentURL.String(), probeResp.StatusCode))
+			return false, nil
+		}
+		var perr error
+		total, perr = parseTotalFromContentRange(probeResp.Header.Get("Content-Range"))
+		if perr != nil || total <= 0 {
+			s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("probe %s: could not parse Content-Range %q, falling back", req.URL.String(), probeResp.Header.Get("Content-Range")))
+			return false, nil
+		}
+		responseHeader = probeResp.Header
 	}
 	if total < s.cfg.DownloadMinSize {
 		s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("file %d bytes < min %d, skipping chunked for %s", total, s.cfg.DownloadMinSize, filename))
@@ -192,72 +224,92 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 		s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("file too large [chunked-cap]: %d bytes > max_response_body_bytes %d — raise this in Settings → Downloads", total, s.cfg.MaxResponseBodyBytes))
 		return true, fmt.Errorf("file too large: %d bytes (cap %d, configured by max_response_body_bytes)", total, s.cfg.MaxResponseBodyBytes)
 	}
-	// First chunk is what the probe already fetched; later chunks may use a
-	// larger size if the configured chunk count cap would be exceeded. Scaling
-	// up — instead of refusing — turns DownloadMaxChunks into a sizing knob
-	// rather than a hard file-size ceiling.
-	firstChunkSize := chunkSize
-	chunks := int((total + chunkSize - 1) / chunkSize)
+	// If we have probe body bytes (regular 206 path), the first chunk reuses
+	// what the probe already fetched. In the too_large path we have nothing,
+	// so the chunk loop fetches every byte from offset 0. firstChunkSize == 0
+	// is the signal for that mode.
+	if tooLargeSize == 0 {
+		var rerr error
+		firstChunkBody, rerr = io.ReadAll(probeResp.Body)
+		if rerr != nil {
+			s.logs.Add(obs.LevelWarn, "download", "failed reading probe body: "+rerr.Error())
+			return true, rerr
+		}
+	}
+	firstChunkSize := int64(len(firstChunkBody))
+
+	// Auto-scale chunk size if the remaining-byte fetch would otherwise
+	// exceed the configured chunk-count cap. The cap is a sizing knob, not
+	// a hard file-size ceiling.
+	chunks := computeChunks(total, firstChunkSize, chunkSize)
 	if s.cfg.DownloadMaxChunks > 0 && chunks > s.cfg.DownloadMaxChunks {
-		// Pick a chunk size that fits the rest of the file in (cap-1) chunks.
-		remainingCap := int64(s.cfg.DownloadMaxChunks - 1)
-		if remainingCap < 1 {
-			remainingCap = 1
+		remainingCap := int64(s.cfg.DownloadMaxChunks)
+		if firstChunkSize > 0 {
+			remainingCap = int64(s.cfg.DownloadMaxChunks - 1)
+			if remainingCap < 1 {
+				remainingCap = 1
+			}
 		}
 		remainingBytes := total - firstChunkSize
 		newChunkSize := (remainingBytes + remainingCap - 1) / remainingCap
-		if newChunkSize < firstChunkSize {
-			newChunkSize = firstChunkSize
+		if newChunkSize < int64(chunkSize) {
+			newChunkSize = int64(chunkSize)
 		}
 		s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("auto-scaling chunk size %d → %d to keep chunks ≤ %d (file %d bytes)", chunkSize, newChunkSize, s.cfg.DownloadMaxChunks, total))
 		chunkSize = newChunkSize
-		// Recompute total chunk count: 1 first chunk + remaining at new size.
-		if remainingBytes <= 0 {
-			chunks = 1
-		} else {
-			chunks = 1 + int((remainingBytes+chunkSize-1)/chunkSize)
-		}
-	}
-
-	// Read first chunk body.
-	first, err := io.ReadAll(probeResp.Body)
-	if err != nil {
-		s.logs.Add(obs.LevelWarn, "download", "failed reading probe body: "+err.Error())
-		return true, err
+		chunks = computeChunks(total, firstChunkSize, chunkSize)
 	}
 
 	// Register download for progress tracking.
 	dlID := s.downloads.NextID()
 	s.downloads.Start(dlID, req.URL.String(), filename, total, chunks)
-	s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("streaming %s: %s (%s, %d chunks)",
-		dlID, filename, fmtBytesGo(total), chunks))
+	mode := "streaming"
+	if tooLargeSize > 0 {
+		mode = "streaming (too_large retry)"
+	}
+	s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("%s %s: %s (%s, %d chunks)",
+		mode, dlID, filename, fmtBytesGo(total), chunks))
 
-	// Send HTTP headers + first chunk to browser immediately.
-	header := probeResp.Header.Clone()
+	// Send HTTP headers to browser immediately.
+	header := responseHeader.Clone()
+	if header == nil {
+		header = http.Header{}
+	}
 	header.Set("Accept-Ranges", "bytes")
+	// In the too_large path we don't have the upstream's content-type from
+	// the probe body. The relay's reply headers usually include it; if not,
+	// the browser will sniff.
 	if err := sw.WriteHeaders(http.StatusOK, header, total); err != nil {
 		s.downloads.Fail(dlID, err.Error())
 		s.cleanupDownload(dlID)
 		return true, err
 	}
-	if err := sw.WriteBody(first); err != nil {
-		s.downloads.Fail(dlID, err.Error())
-		s.cleanupDownload(dlID)
-		return true, err
-	}
-	_ = sw.Flush()
-	s.downloads.AddBytes(dlID, int64(len(first)))
-	s.downloads.ChunkDone(dlID)
 
-	if chunks <= 1 {
-		s.downloads.Finish(dlID)
-		s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("%s complete (single chunk): %s", dlID, filename))
-		s.cleanupDownload(dlID)
-		return true, nil
+	if firstChunkSize > 0 {
+		if err := sw.WriteBody(firstChunkBody); err != nil {
+			s.downloads.Fail(dlID, err.Error())
+			s.cleanupDownload(dlID)
+			return true, err
+		}
+		_ = sw.Flush()
+		s.downloads.AddBytes(dlID, firstChunkSize)
+		s.downloads.ChunkDone(dlID)
+
+		if chunks <= 1 {
+			s.downloads.Finish(dlID)
+			s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("%s complete (single chunk): %s", dlID, filename))
+			s.cleanupDownload(dlID)
+			return true, nil
+		}
 	}
 
-	// Prepare ordered chunk channels for streaming in order.
-	remaining := chunks - 1
+	// Prepare ordered chunk channels for streaming in order. When the probe
+	// body was reused as chunk 0 (firstChunkSize > 0), the parallel loop
+	// fetches the remaining chunks. Otherwise it fetches every chunk.
+	remaining := chunks
+	if firstChunkSize > 0 {
+		remaining = chunks - 1
+	}
 	ready := make([]chan chunkResult, remaining)
 	for i := range ready {
 		ready[i] = make(chan chunkResult, 1)
@@ -271,7 +323,10 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 	sem := make(chan struct{}, parallel)
 	var wg sync.WaitGroup
 	for i := 0; i < remaining; i++ {
-		chunkIdx := i + 1
+		chunkIdx := i
+		if firstChunkSize > 0 {
+			chunkIdx = i + 1
+		}
 		start := firstChunkSize + int64(i)*chunkSize
 		end := start + chunkSize - 1
 		if end >= total {
@@ -397,6 +452,24 @@ func cloneRangeRequestForURL(req *http.Request, u *url.URL, start, end int64) *h
 	clone.Header.Set("Range", fmt.Sprintf("bytes=%d-%d", start, end))
 	clone.RequestURI = ""
 	return clone
+}
+
+// computeChunks returns the number of chunks needed to cover total bytes
+// when the first firstChunkBytes are already in hand and remaining bytes
+// are split into chunkSize-sized pieces.
+func computeChunks(total, firstChunkBytes, chunkSize int64) int {
+	if chunkSize <= 0 || total <= 0 {
+		return 0
+	}
+	if firstChunkBytes >= total {
+		return 1
+	}
+	remaining := total - firstChunkBytes
+	rest := int((remaining + chunkSize - 1) / chunkSize)
+	if firstChunkBytes > 0 {
+		return 1 + rest
+	}
+	return rest
 }
 
 // isRedirect reports whether status is one of the HTTP redirect codes that
