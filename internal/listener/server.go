@@ -259,6 +259,24 @@ func (s *Server) writeRequestResponse(conn net.Conn, req *http.Request, mode MIT
 		resp, err = s.responseFor(req)
 	}
 	if err != nil {
+		// Safety net: if the relay reported the upstream response was too
+		// large for its per-call cap, retry as a chunked Range download.
+		// Mirrors Python's relay() → too_large → relay_parallel() flow.
+		var tle *protocol.TooLargeError
+		if mode == MITMRelay && errors.As(err, &tle) {
+			sw := &rawConnWriter{w: conn}
+			if handled, herr := s.tryStreamFromTooLarge(req, sw, tle); handled {
+				if herr != nil {
+					resp = errorResponse(req, herr, http.StatusBadGateway)
+					if origin := req.Header.Get("Origin"); origin != "" {
+						ensureCORS(resp.Header, origin)
+					}
+					defer resp.Body.Close()
+					return resp.Write(conn)
+				}
+				return nil
+			}
+		}
 		resp = errorResponse(req, err, http.StatusBadGateway)
 		if errors.Is(err, scheduler.ErrNoAccountAvailable) {
 			resp = errorResponse(req, err, http.StatusServiceUnavailable)
@@ -293,6 +311,23 @@ func (s *Server) serveRelayed(w http.ResponseWriter, req *http.Request) {
 
 	resp, err := s.responseFor(req)
 	if err != nil {
+		// Safety net: if the relay reported the upstream response was too
+		// large, retry as a chunked Range download.
+		var tle *protocol.TooLargeError
+		if errors.As(err, &tle) {
+			swRetry := &httpResponseWriterAdapter{w: w}
+			if handled, herr := s.tryStreamFromTooLarge(req, swRetry, tle); handled {
+				if herr != nil && !swRetry.written {
+					if origin := req.Header.Get("Origin"); origin != "" {
+						w.Header().Set("Access-Control-Allow-Origin", origin)
+						w.Header().Set("Access-Control-Allow-Credentials", "true")
+						w.Header().Set("Vary", "Origin")
+					}
+					http.Error(w, herr.Error(), http.StatusBadGateway)
+				}
+				return
+			}
+		}
 		status := http.StatusBadGateway
 		if errors.Is(err, scheduler.ErrNoAccountAvailable) {
 			status = http.StatusServiceUnavailable

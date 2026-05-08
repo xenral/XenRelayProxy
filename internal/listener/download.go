@@ -217,6 +217,50 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 		}
 		responseHeader = probeResp.Header
 	}
+	// If we have probe body bytes (regular 206 path), pass them so the first
+	// chunk reuses what the probe already fetched. In the too_large path we
+	// have nothing, so runChunked fetches every byte via Range from offset 0.
+	if tooLargeSize == 0 {
+		var rerr error
+		firstChunkBody, rerr = io.ReadAll(probeResp.Body)
+		if rerr != nil {
+			s.logs.Add(obs.LevelWarn, "download", "failed reading probe body: "+rerr.Error())
+			return true, rerr
+		}
+	}
+	return s.runChunked(req, sw, currentURL, total, firstChunkBody, responseHeader, filename, chunkSize)
+}
+
+// tryStreamFromTooLarge is the safety net invoked when the single-shot relay
+// path returned a *protocol.TooLargeError on a GET with no body. The relay
+// already told us the upstream-declared size; we skip the probe and go
+// straight into chunked Range-mode fetching.
+func (s *Server) tryStreamFromTooLarge(req *http.Request, sw streamWriter, tle *protocol.TooLargeError) (handled bool, err error) {
+	if req.Method != http.MethodGet || (req.Body != nil && req.ContentLength > 0) {
+		return false, nil
+	}
+	if req.Header.Get("Range") != "" {
+		return false, nil
+	}
+	if tle == nil || tle.Size <= 0 {
+		return false, nil
+	}
+	chunkSize := s.cfg.DownloadChunkSize
+	if chunkSize <= 0 {
+		chunkSize = 512 * 1024
+	}
+	headers := tle.Headers
+	if headers == nil {
+		headers = http.Header{}
+	}
+	s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("single-shot reported too_large (%d bytes) — switching to chunked retry for %s", tle.Size, req.URL.String()))
+	return s.runChunked(req, sw, req.URL, tle.Size, nil, headers, filenameFromURL(req.URL), chunkSize)
+}
+
+// runChunked streams a known-size file as parallel Range chunks. firstChunkBody
+// is empty in the too_large fallback path (chunks fetch every byte from 0)
+// or carries the probe-fetched first chunk bytes in the regular 206 path.
+func (s *Server) runChunked(req *http.Request, sw streamWriter, currentURL *url.URL, total int64, firstChunkBody []byte, responseHeader http.Header, filename string, chunkSize int64) (handled bool, err error) {
 	if total < s.cfg.DownloadMinSize {
 		s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("file %d bytes < min %d, skipping chunked for %s", total, s.cfg.DownloadMinSize, filename))
 		return false, nil
@@ -225,17 +269,8 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 		s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("file too large [chunked-cap]: %d bytes > max_response_body_bytes %d — raise this in Settings → Downloads", total, s.cfg.MaxResponseBodyBytes))
 		return true, fmt.Errorf("file too large: %d bytes (cap %d, configured by max_response_body_bytes)", total, s.cfg.MaxResponseBodyBytes)
 	}
-	// If we have probe body bytes (regular 206 path), the first chunk reuses
-	// what the probe already fetched. In the too_large path we have nothing,
-	// so the chunk loop fetches every byte from offset 0. firstChunkSize == 0
-	// is the signal for that mode.
-	if tooLargeSize == 0 {
-		var rerr error
-		firstChunkBody, rerr = io.ReadAll(probeResp.Body)
-		if rerr != nil {
-			s.logs.Add(obs.LevelWarn, "download", "failed reading probe body: "+rerr.Error())
-			return true, rerr
-		}
+	if responseHeader == nil {
+		responseHeader = http.Header{}
 	}
 	firstChunkSize := int64(len(firstChunkBody))
 
@@ -271,7 +306,7 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 	defer dlCancel()
 	s.downloads.SetCancel(dlID, dlCancel)
 	mode := "streaming"
-	if tooLargeSize > 0 {
+	if firstChunkSize == 0 {
 		mode = "streaming (too_large retry)"
 	}
 	s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("%s %s: %s (%s, %d chunks)",
@@ -439,7 +474,12 @@ func (s *Server) isLikelyDownload(u *url.URL) bool {
 			return true
 		}
 	}
-	// Also check query params for common download indicators.
+	// "/download" / "/downloads" segments in the path are also a strong hint
+	// (e.g. https://code.visualstudio.com/sha/download?os=linux-deb-x64).
+	if strings.Contains(p, "/download") {
+		return true
+	}
+	// Common download indicators in the query string.
 	q := strings.ToLower(u.RawQuery)
 	if strings.Contains(q, "download") || strings.Contains(q, "dl=") ||
 		strings.Contains(q, "export=download") {
