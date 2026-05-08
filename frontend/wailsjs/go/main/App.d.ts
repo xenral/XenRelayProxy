@@ -4,6 +4,8 @@ import {relayvpn} from '../models';
 import {config} from '../models';
 import {frontscan} from '../models';
 
+export function CancelDownload(arg1:string):Promise<void>;
+
 export function GenerateAuthKey():Promise<string>;
 
 export function GetCACertInfo():Promise<relayvpn.CACertInfo>;
