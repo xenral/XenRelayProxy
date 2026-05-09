@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import { Check, Copy, ExternalLink, Server, Terminal as TerminalIcon } from "lucide-react";
 import { useT } from "./i18n";
+import relaySource from "../../server_relay/relay.py?raw";
 
 /**
  * Side-guide for the optional server-side Python relay. NOT a wizard step —
@@ -17,40 +18,7 @@ export default function PythonRelayGuide() {
     }).catch(() => {});
   }
 
-  const relaySnippet = `#!/usr/bin/env python3
-# server_relay/relay.py — drop on your VPS, run alongside your existing services.
-# Apps Script POSTs JSON-encoded fetch requests; relay.py executes them and
-# returns the response. Target sites see your VPS IP, not Google's.
-
-import os, base64, json
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib import request as ur, error as ue
-
-AUTH_KEY = os.environ.get("RELAY_AUTH_KEY", "CHANGE_ME")
-PORT = int(os.environ.get("PORT", "9443"))
-
-class H(BaseHTTPRequestHandler):
-  def do_POST(self):
-    n = int(self.headers.get("Content-Length") or 0)
-    body = json.loads(self.rfile.read(n))
-    if body.get("k") != AUTH_KEY:
-      self.send_response(403); self.end_headers(); return
-    req = ur.Request(body["u"], method=body.get("m","GET"),
-                     data=base64.b64decode(body.get("b","")) or None,
-                     headers=body.get("h",{}))
-    try:
-      r = ur.urlopen(req, timeout=25)
-      out = {"s": r.status, "h": dict(r.headers),
-             "b": base64.b64encode(r.read()).decode()}
-    except ue.HTTPError as e:
-      out = {"s": e.code, "h": dict(e.headers),
-             "b": base64.b64encode(e.read()).decode()}
-    self.send_response(200)
-    self.send_header("Content-Type","application/json")
-    self.end_headers()
-    self.wfile.write(json.dumps(out).encode())
-
-ThreadingHTTPServer(("0.0.0.0", PORT), H).serve_forever()`;
+  const relaySnippet = relaySource;
 
   const codegsSnippet = `// In your deployed apps_script/Code.gs, set:
 const RELAY_URL = "https://your-vps.example.com:9443/relay";
