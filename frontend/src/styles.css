@@ -81,7 +81,16 @@ input::placeholder { color: var(--muted); }
   gap: 2px;
   padding: 14px 10px;
   background: var(--surface);
-  border-right: 1px solid var(--border);
+  border-inline-end: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  align-self: start;
+  height: 100vh;
+  max-height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  z-index: 5;
+  overscroll-behavior: contain;
 }
 .brand {
   display: flex;
@@ -103,6 +112,7 @@ input::placeholder { color: var(--muted); }
 
 nav { display: grid; gap: 1px; flex: 1; margin-top: 4px; align-content: start; }
 nav button {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 9px;
@@ -116,6 +126,18 @@ nav button {
 }
 nav button:hover  { background: rgba(255,255,255,.05); color: var(--text); }
 nav button.active { background: rgba(79,142,247,.14); color: var(--primary); font-weight: 600; }
+nav button.active::before {
+  content: "";
+  position: absolute;
+  inset-inline-start: -10px;
+  top: 6px;
+  bottom: 6px;
+  width: 3px;
+  border-radius: 0 3px 3px 0;
+  background: var(--primary);
+  box-shadow: 0 0 8px var(--primary-glow);
+}
+[dir="rtl"] nav button.active::before { border-radius: 3px 0 0 3px; }
 
 .lang {
   display: flex; align-items: center; gap: 8px;
@@ -928,12 +950,19 @@ tr:hover td { background: rgba(255,255,255,.02); }
   body { min-width: 0; }
   .app { grid-template-columns: 1fr; }
   .sidebar {
-    flex-direction: row; overflow-x: auto;
+    flex-direction: row; overflow-x: auto; overflow-y: hidden;
     padding: 10px; gap: 6px;
+    height: auto; max-height: none;
+    align-self: stretch;
+    border-inline-end: 0;
+    border-bottom: 1px solid var(--border);
+    backdrop-filter: blur(8px);
+    background: rgba(22,27,34,.92);
   }
+  nav button.active::before { display: none; }
   .brand {
     min-width: 150px; padding: 0 14px 0 0; margin-bottom: 0;
-    border-bottom: 0; border-right: 1px solid var(--border);
+    border-bottom: 0; border-inline-end: 1px solid var(--border);
   }
   nav { grid-auto-flow: column; grid-auto-columns: max-content; flex: none; gap: 2px; }
   .settings-grid, .scan, .dual-row { grid-template-columns: 1fr; }
