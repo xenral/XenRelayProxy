@@ -288,7 +288,7 @@ function App() {
             <div className="brand-icon"><ShieldCheck size={16} color="#fff" /></div>
             <div>
               <strong>XenRelayProxy</strong>
-              <span>v{status?.version ?? "1.3.8"}</span>
+              <span>v{status?.version ?? "1.3.10"}</span>
             </div>
           </div>
           <nav>
@@ -345,7 +345,7 @@ function App() {
               />
             )}
             {screen === "pyrelay"   && <PythonRelayGuide />}
-            {screen === "about"     && <AboutView version={status?.version ?? "1.3.8"} />}
+            {screen === "about"     && <AboutView version={status?.version ?? "1.3.10"} />}
           </ErrorBoundary>
         </main>
       </div>

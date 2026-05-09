@@ -466,6 +466,16 @@ func (s *Server) absoluteRequestURL(req *http.Request, host, port string) {
 func (s *Server) doSNIRewrite(req *http.Request) (*http.Response, error) {
 	clone := req.Clone(req.Context())
 	clone.RequestURI = ""
+	// SNI rewrite: dial the Google front IP but advertise front_domain in
+	// the TLS handshake, so the ISP only ever sees SNI=front_domain on the
+	// wire. Google's edge routes the request by the inner Host header.
+	// Mirrors Python proxy_server._do_sni_rewrite_tunnel (server_hostname=
+	// fronter.sni_host). Using the request's actual hostname here would
+	// defeat the rewrite entirely.
+	sni := s.cfg.FrontDomain
+	if sni == "" {
+		sni = clone.URL.Hostname()
+	}
 	tr := &http.Transport{
 		Proxy: nil,
 		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
@@ -478,7 +488,7 @@ func (s *Server) doSNIRewrite(req *http.Request) (*http.Response, error) {
 				return nil, err
 			}
 			tc := tls.Client(raw, &tls.Config{
-				ServerName: clone.URL.Hostname(),
+				ServerName: sni,
 				MinVersion: tls.VersionTLS12,
 				NextProtos: []string{"h2", "http/1.1"},
 			})

@@ -228,7 +228,7 @@ func (s *Server) tryStreamDownload(req *http.Request, sw streamWriter) (handled 
 			return true, rerr
 		}
 	}
-	return s.runChunked(req, sw, currentURL, total, firstChunkBody, responseHeader, filename, chunkSize)
+	return s.runChunked(req, sw, currentURL, total, firstChunkBody, responseHeader, filename, chunkSize, tooLargeSize > 0)
 }
 
 // tryStreamFromTooLarge is the safety net invoked when the single-shot relay
@@ -254,14 +254,17 @@ func (s *Server) tryStreamFromTooLarge(req *http.Request, sw streamWriter, tle *
 		headers = http.Header{}
 	}
 	s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("single-shot reported too_large (%d bytes) — switching to chunked retry for %s", tle.Size, req.URL.String()))
-	return s.runChunked(req, sw, req.URL, tle.Size, nil, headers, filenameFromURL(req.URL), chunkSize)
+	return s.runChunked(req, sw, req.URL, tle.Size, nil, headers, filenameFromURL(req.URL), chunkSize, true)
 }
 
 // runChunked streams a known-size file as parallel Range chunks. firstChunkBody
 // is empty in the too_large fallback path (chunks fetch every byte from 0)
 // or carries the probe-fetched first chunk bytes in the regular 206 path.
-func (s *Server) runChunked(req *http.Request, sw streamWriter, currentURL *url.URL, total int64, firstChunkBody []byte, responseHeader http.Header, filename string, chunkSize int64) (handled bool, err error) {
-	if total < s.cfg.DownloadMinSize {
+// forceChunked bypasses the DownloadMinSize gate: callers set it on the
+// too_large retry path because the relay already told us the file won't fit
+// in a single call, regardless of how it compares to the min-size heuristic.
+func (s *Server) runChunked(req *http.Request, sw streamWriter, currentURL *url.URL, total int64, firstChunkBody []byte, responseHeader http.Header, filename string, chunkSize int64, forceChunked bool) (handled bool, err error) {
+	if !forceChunked && total < s.cfg.DownloadMinSize {
 		s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("file %d bytes < min %d, skipping chunked for %s", total, s.cfg.DownloadMinSize, filename))
 		return false, nil
 	}

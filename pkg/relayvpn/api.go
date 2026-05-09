@@ -66,7 +66,7 @@ type Stats struct {
 	Downloads []obs.DownloadEntry `json:"downloads"`
 }
 
-const Version = "1.3.8"
+const Version = "1.3.10"
 
 // CACertInfo holds metadata about the local MITM CA certificate.
 type CACertInfo struct {
@@ -276,7 +276,34 @@ func (a *API) SaveConfig(cfg config.Config) error {
 	a.logs.Add(obs.LevelInfo, "config", "configuration saved")
 	a.mu.Lock()
 	a.cfg = cfg
+	wasRunning := a.status.Running
 	a.mu.Unlock()
+
+	// Auto-restart the listener if it's currently running so settings like
+	// force_relay_sni_hosts, sni_rewrite_hosts, bypass_hosts, etc. apply
+	// immediately instead of requiring a manual disconnect/reconnect.
+	// We only restart when the new config validates — saves from the wizard
+	// or partial-edit flows shouldn't tear down a working connection.
+	if wasRunning {
+		validated := cfg
+		validated.SetDefaults()
+		if err := validated.Normalize(); err != nil {
+			a.logs.Add(obs.LevelWarn, "config", "skipping auto-reload (normalize failed): "+err.Error())
+			return nil
+		}
+		if err := validated.Validate(); err != nil {
+			a.logs.Add(obs.LevelWarn, "config", "skipping auto-reload (validation failed): "+err.Error())
+			return nil
+		}
+		a.logs.Add(obs.LevelInfo, "config", "applying new configuration — restarting listener")
+		if err := a.Stop(); err != nil {
+			a.logs.Add(obs.LevelError, "config", "auto-reload stop failed: "+err.Error())
+			return nil
+		}
+		if err := a.Start(context.Background()); err != nil {
+			a.logs.Add(obs.LevelError, "config", "auto-reload start failed: "+err.Error())
+		}
+	}
 	return nil
 }
 

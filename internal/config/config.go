@@ -15,7 +15,12 @@ const (
 	DefaultSOCKS5Port          = 1080
 	DefaultGoogleIP            = "216.239.38.120"
 	DefaultFrontDomain         = "www.google.com"
-	DefaultRelayTimeoutSeconds = 25
+	// 90s gives headroom for slow upstreams like Anthropic /v1/messages
+	// (non-streaming POSTs routinely take 30–60s). Apps Script's
+	// UrlFetchApp soft-caps around 60s and the web app handler can run
+	// for ~6 minutes, so the proxy budget should bracket UrlFetchApp,
+	// not undercut it.
+	DefaultRelayTimeoutSeconds = 90
 )
 
 var placeholderAuthKeys = map[string]struct{}{
@@ -165,6 +170,13 @@ func (c *Config) SetDefaults() {
 		c.LogLevel = "INFO"
 	}
 	if c.RelayTimeout == 0 {
+		c.RelayTimeout = DefaultRelayTimeoutSeconds
+	}
+	// Migrate the legacy 25s default. It's too low for LLM-style upstreams
+	// (Anthropic /v1/messages, OpenAI /v1/chat/completions) which routinely
+	// run 30–60s, and Apps Script's UrlFetchApp can hold the connection
+	// roughly that long anyway.
+	if c.RelayTimeout > 0 && c.RelayTimeout < 60 {
 		c.RelayTimeout = DefaultRelayTimeoutSeconds
 	}
 	if c.TLSConnectTimeout == 0 {

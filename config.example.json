@@ -31,7 +31,7 @@
   "log_level": "INFO",
   "verify_ssl": true,
   "lan_sharing": false,
-  "relay_timeout": 25,
+  "relay_timeout": 90,
   "tls_connect_timeout": 15,
   "tcp_connect_timeout": 10,
   "max_request_body_bytes": 104857600,
