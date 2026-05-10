@@ -387,24 +387,9 @@ func (s *Server) runChunked(req *http.Request, sw streamWriter, currentURL *url.
 				return
 			}
 			defer func() { <-sem }()
-			if dlCtx.Err() != nil {
-				ch <- chunkResult{err: dlCtx.Err()}
-				return
-			}
-			partReq := cloneRangeRequestForURL(req, currentURL, start, end)
-			partResp, err := s.relay.Do(dlCtx, partReq)
+			part, err := s.fetchChunkWithRetry(dlCtx, req, currentURL, start, end, idx+1, chunks, dlID, filename)
 			if err != nil {
-				ch <- chunkResult{err: fmt.Errorf("chunk %d/%d failed: %w", idx+1, chunks, err)}
-				return
-			}
-			defer partResp.Body.Close()
-			if partResp.StatusCode != http.StatusPartialContent && partResp.StatusCode != http.StatusOK {
-				ch <- chunkResult{err: fmt.Errorf("chunk %d/%d: status %d", idx+1, chunks, partResp.StatusCode)}
-				return
-			}
-			part, err := io.ReadAll(partResp.Body)
-			if err != nil {
-				ch <- chunkResult{err: fmt.Errorf("chunk %d/%d read: %w", idx+1, chunks, err)}
+				ch <- chunkResult{err: err}
 				return
 			}
 			ch <- chunkResult{data: part}
@@ -458,6 +443,55 @@ func (s *Server) runChunked(req *http.Request, sw streamWriter, currentURL *url.
 	s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("%s complete: %s (%s)", dlID, filename, fmtBytesGo(total)))
 	s.cleanupDownload(dlID)
 	return true, nil
+}
+
+// fetchChunkWithRetry fetches a single byte range with bounded retry and
+// exponential backoff. Transient relay errors, non-2xx/206 statuses, and
+// body-read errors are retried — including the "deployment not found"
+// case where the scheduler may rotate to a healthy account on the next
+// attempt. Context cancellation (user cancel / browser disconnect) and
+// the chunk-cap "file too large" condition are returned immediately.
+func (s *Server) fetchChunkWithRetry(ctx context.Context, req *http.Request, currentURL *url.URL, start, end int64, idx, totalChunks int, dlID, filename string) ([]byte, error) {
+	const maxAttempts = 5
+	var lastErr error
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
+		if err := ctx.Err(); err != nil {
+			if lastErr != nil {
+				return nil, lastErr
+			}
+			return nil, err
+		}
+		partReq := cloneRangeRequestForURL(req, currentURL, start, end)
+		partResp, err := s.relay.Do(ctx, partReq)
+		if err != nil {
+			lastErr = fmt.Errorf("chunk %d/%d attempt %d: %w", idx, totalChunks, attempt, err)
+		} else if partResp.StatusCode != http.StatusPartialContent && partResp.StatusCode != http.StatusOK {
+			status := partResp.StatusCode
+			_ = partResp.Body.Close()
+			lastErr = fmt.Errorf("chunk %d/%d attempt %d: status %d", idx, totalChunks, attempt, status)
+		} else {
+			part, rerr := io.ReadAll(partResp.Body)
+			_ = partResp.Body.Close()
+			if rerr != nil {
+				lastErr = fmt.Errorf("chunk %d/%d attempt %d read: %w", idx, totalChunks, attempt, rerr)
+			} else {
+				if attempt > 1 {
+					s.logs.Add(obs.LevelInfo, "download", fmt.Sprintf("%s: chunk %d/%d recovered after %d attempts (%s)", dlID, idx, totalChunks, attempt, filename))
+				}
+				return part, nil
+			}
+		}
+		if attempt < maxAttempts {
+			s.logs.Add(obs.LevelWarn, "download", fmt.Sprintf("%s: chunk %d/%d attempt %d failed, retrying — %s", dlID, idx, totalChunks, attempt, lastErr.Error()))
+			backoff := min(time.Duration(1<<(attempt-1))*250*time.Millisecond, 4*time.Second)
+			select {
+			case <-time.After(backoff):
+			case <-ctx.Done():
+				return nil, lastErr
+			}
+		}
+	}
+	return nil, fmt.Errorf("chunk %d/%d failed after %d attempts: %w", idx, totalChunks, maxAttempts, lastErr)
 }
 
 func (s *Server) cleanupDownload(dlID string) {

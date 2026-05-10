@@ -11,6 +11,7 @@ import "./styles.css";
 import { LocaleContext, translate, useT, type Locale } from "./i18n";
 import Wizard from "./Wizard";
 import PythonRelayGuide from "./PythonRelayGuide";
+import VercelRelayGuide from "./VercelRelayGuide";
 
 /* ─── Types ──────────────────────────────────────────────────── */
 
@@ -85,7 +86,7 @@ type CACertInfo = {
   exists: boolean; trusted: boolean; pem: string;
 };
 
-type Screen = "home" | "accounts" | "dashboard" | "logs" | "settings" | "cert" | "terminal" | "about" | "pyrelay" | "wizard";
+type Screen = "home" | "accounts" | "dashboard" | "logs" | "settings" | "cert" | "terminal" | "about" | "pyrelay" | "vrelay" | "wizard";
 type ToastKind = "success" | "error" | "info";
 type Toast = { id: number; kind: ToastKind; msg: string };
 
@@ -235,7 +236,7 @@ function App() {
   useEffect(() => {
     call<Config>("GetConfig").then(setCfg).catch(() => setCfg(BLANK_CONFIG));
     refresh();
-    const id = window.setInterval(refresh, 1500);
+    const id = window.setInterval(refresh, 500);
     // First-install gate: route to wizard screen until setup_completed flips.
     call<boolean>("IsSetupCompleted")
       .then((done) => { if (!done) setScreen("wizard"); })
@@ -276,6 +277,7 @@ function App() {
     ["terminal",  Terminal,   "nav.terminal"],
     ["wizard",    Wand2,      "nav.wizard"],
     ["pyrelay",   Server,     "nav.pythonRelayGuide"],
+    ["vrelay",    Globe2,     "nav.vercelRelayGuide"],
     ["about",     BadgeInfo,  "nav.about"],
   ];
 
@@ -345,6 +347,7 @@ function App() {
               />
             )}
             {screen === "pyrelay"   && <PythonRelayGuide />}
+            {screen === "vrelay"    && <VercelRelayGuide />}
             {screen === "about"     && <AboutView version={status?.version ?? "1.3.11"} />}
           </ErrorBoundary>
         </main>
