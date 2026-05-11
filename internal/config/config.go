@@ -21,6 +21,13 @@ const (
 	// for ~6 minutes, so the proxy budget should bracket UrlFetchApp,
 	// not undercut it.
 	DefaultRelayTimeoutSeconds = 90
+
+	// Relay backend modes. ModeAppsScript routes through Google Apps
+	// Script; ModeVercel routes through a user-deployed Vercel function.
+	// An account-level Provider override takes precedence over the
+	// top-level Config.Mode default.
+	ModeAppsScript = "apps_script"
+	ModeVercel     = "vercel"
 )
 
 var placeholderAuthKeys = map[string]struct{}{
@@ -82,6 +89,26 @@ type Account struct {
 	Enabled     bool     `json:"enabled"`
 	Weight      float64  `json:"weight"`
 	DailyQuota  int      `json:"daily_quota"`
+	// Provider overrides Config.Mode for this account. Empty means inherit.
+	// Valid values are ModeAppsScript and ModeVercel.
+	Provider string `json:"provider,omitempty"`
+	// VercelURL is the base URL of the user's deployed Vercel function
+	// (e.g. https://my-relay.vercel.app). Required when the effective
+	// provider is ModeVercel; ignored otherwise.
+	VercelURL string `json:"vercel_url,omitempty"`
+}
+
+// EffectiveProvider returns the relay backend that should handle requests
+// for this account, falling back to the top-level Config.Mode when the
+// account's own Provider field is empty.
+func (a Account) EffectiveProvider(mode string) string {
+	if a.Provider != "" {
+		return a.Provider
+	}
+	if mode != "" {
+		return mode
+	}
+	return ModeAppsScript
 }
 
 type Scheduler struct {
@@ -149,7 +176,7 @@ func writeJSON(path string, cfg Config) error {
 
 func (c *Config) SetDefaults() {
 	if c.Mode == "" {
-		c.Mode = "apps_script"
+		c.Mode = ModeAppsScript
 	}
 	if c.GoogleIP == "" {
 		c.GoogleIP = DefaultGoogleIP
@@ -273,7 +300,15 @@ func (c *Config) SetDefaults() {
 }
 
 func (c *Config) Normalize() error {
-	c.Mode = "apps_script"
+	c.Mode = strings.TrimSpace(strings.ToLower(c.Mode))
+	switch c.Mode {
+	case "":
+		c.Mode = ModeAppsScript
+	case ModeAppsScript, ModeVercel:
+		// ok
+	default:
+		return fmt.Errorf("unsupported mode: %s (expected %s or %s)", c.Mode, ModeAppsScript, ModeVercel)
+	}
 	c.GoogleIP = strings.TrimSpace(c.GoogleIP)
 	c.FrontDomain = strings.ToLower(strings.TrimSpace(strings.TrimSuffix(c.FrontDomain, ".")))
 	c.AuthKey = strings.TrimSpace(c.AuthKey)
@@ -310,6 +345,14 @@ func (c *Config) Normalize() error {
 		a.Label = strings.TrimSpace(a.Label)
 		a.Email = strings.TrimSpace(a.Email)
 		a.ScriptID = strings.TrimSpace(a.ScriptID)
+		a.Provider = strings.TrimSpace(strings.ToLower(a.Provider))
+		switch a.Provider {
+		case "", ModeAppsScript, ModeVercel:
+			// ok
+		default:
+			return fmt.Errorf("account %q has unsupported provider: %s", a.Label, a.Provider)
+		}
+		a.VercelURL = strings.TrimRight(strings.TrimSpace(a.VercelURL), "/")
 		if a.AccountType == "" {
 			a.AccountType = "consumer"
 		}
@@ -361,12 +404,22 @@ func (c Config) Validate() error {
 			return fmt.Errorf("duplicate account label: %s", a.Label)
 		}
 		labels[a.Label] = struct{}{}
-		if len(a.ScriptIDs) == 0 {
-			return fmt.Errorf("account %q has no script IDs", a.Label)
-		}
-		for _, sid := range a.ScriptIDs {
-			if !validScriptID(sid) {
-				return fmt.Errorf("account %q has missing or placeholder script ID", a.Label)
+		switch a.EffectiveProvider(c.Mode) {
+		case ModeVercel:
+			if a.VercelURL == "" {
+				return fmt.Errorf("account %q (vercel mode) requires vercel_url", a.Label)
+			}
+			if !strings.HasPrefix(a.VercelURL, "http://") && !strings.HasPrefix(a.VercelURL, "https://") {
+				return fmt.Errorf("account %q vercel_url must start with http:// or https:// (got %q)", a.Label, a.VercelURL)
+			}
+		default:
+			if len(a.ScriptIDs) == 0 {
+				return fmt.Errorf("account %q has no script IDs", a.Label)
+			}
+			for _, sid := range a.ScriptIDs {
+				if !validScriptID(sid) {
+					return fmt.Errorf("account %q has missing or placeholder script ID", a.Label)
+				}
 			}
 		}
 		if a.DailyQuota <= 0 {

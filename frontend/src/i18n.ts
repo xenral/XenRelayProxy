@@ -262,6 +262,7 @@ const en: Strings = {
   // Sidebar / nav additions for wizard + python relay
   "nav.wizard": "Setup Wizard",
   "nav.pythonRelayGuide": "Python Relay",
+  "nav.vercelRelayGuide": "Vercel Relay",
 
   // Wizard — chrome
   "wizard.topbar.setup": "First-time setup",
@@ -274,10 +275,41 @@ const en: Strings = {
   // Wizard — Step rail
   "wizard.rail.title": "Setup steps",
   "wizard.rail.welcome": "Welcome",
+  "wizard.rail.mode": "Relay mode",
   "wizard.rail.auth": "Auth key",
   "wizard.rail.account": "Account",
   "wizard.rail.cert": "Trust CA",
   "wizard.rail.done": "Finish",
+
+  // Wizard — Mode picker
+  "wizard.mode.title": "Pick a relay backend",
+  "wizard.mode.body": "XenRelayProxy can route traffic through Google Apps Script (free, but quota-bound) or a Vercel function you deploy in 30 seconds. You can change this later, or mix per account.",
+  "wizard.mode.apps.title": "Apps Script",
+  "wizard.mode.apps.body": "Free egress through Google. Limited to 20 MB per call and a daily call quota.",
+  "wizard.mode.apps.b1": "No infrastructure to host",
+  "wizard.mode.apps.b2": "Needs a Google account + manual deployment",
+  "wizard.mode.apps.b3": "Daily quota: 20k consumer / 100k Workspace",
+  "wizard.mode.vercel.title": "Vercel",
+  "wizard.mode.vercel.body": "Deploy a tiny Node function with one click. Streaming responses, longer timeouts, no Google account.",
+  "wizard.mode.vercel.b1": "30-second one-click deploy",
+  "wizard.mode.vercel.b2": "Up to 800 s per call (Pro) / 300 s (Hobby)",
+  "wizard.mode.vercel.b3": "Streaming responses bypass the 4.5 MB body cap",
+  "wizard.mode.switchHint": "You can flip modes any time from the sidebar — your accounts and CA stay put.",
+
+  // Wizard — Vercel account step
+  "wizard.vercel.title": "Deploy your Vercel relay",
+  "wizard.vercel.body": "Click the button below to clone the relay function into your Vercel account, then paste the resulting URL here.",
+  "wizard.vercel.step1": "Click Deploy to Vercel — Vercel asks for a project name and the RELAY_TOKEN.",
+  "wizard.vercel.step2": "Set RELAY_TOKEN to the auth key from the previous step (we'll use the same secret on both sides).",
+  "wizard.vercel.step3": "Vercel returns a *.vercel.app URL — paste it below and click Test connection.",
+  "wizard.vercel.deployCta": "Deploy to Vercel",
+  "wizard.vercel.urlLabel": "Vercel deployment URL",
+  "wizard.vercel.urlHelp": "Just the deployment root, e.g. https://my-relay.vercel.app — we'll append /api/tunnel.",
+  "wizard.vercel.urlRequired": "Vercel URL is required.",
+  "wizard.vercel.urlScheme": "URL must start with http:// or https://.",
+  "wizard.vercel.testCta": "Test connection",
+  "wizard.vercel.testing": "Testing…",
+  "wizard.vercel.testOk": "Connected. Auth token matches RELAY_TOKEN on the deployment.",
 
   // Wizard — Welcome
   "wizard.welcome.title": "Welcome to XenRelayProxy",
@@ -298,6 +330,7 @@ const en: Strings = {
   "wizard.auth.placeholderError": "Auth key cannot be empty or use a placeholder value.",
   "wizard.auth.frontDomainRequired": "Front domain is required.",
   "wizard.auth.help": "This shared secret authenticates your local proxy with your Apps Script deployment.",
+  "wizard.auth.helpVercel": "This shared secret is sent as X-Relay-Token on every Vercel call and must match RELAY_TOKEN on the deployment.",
   "wizard.auth.frontDomainLabel": "Front Domain",
   "wizard.auth.frontDomainHelp": "The Google-fronted hostname your proxy connects to. Default works for most users.",
 
@@ -344,10 +377,12 @@ const en: Strings = {
   // Wizard — Done
   "wizard.done.title": "You're all set",
   "wizard.done.body": "Configuration saved. Hit Start Proxy to begin tunnelling — you can rerun this wizard anytime from the sidebar.",
+  "wizard.done.summaryMode": "Relay mode",
   "wizard.done.summaryAuthKey": "Auth key",
   "wizard.done.summaryAccount": "Account",
   "wizard.done.summaryDeployments": "deployment(s)",
   "wizard.done.summaryFrontIP": "Google front IP",
+  "wizard.done.summaryVercelURL": "Vercel URL",
   "wizard.done.start": "Start Proxy",
   "wizard.done.starting": "Starting…",
 
@@ -367,6 +402,25 @@ const en: Strings = {
   "guide.python.wireTitle": "Wire it into Code.gs",
   "guide.python.wireBody": "Edit your deployed Code.gs and set RELAY_URL plus RELAY_KEY. Apps Script will route fetches through your VPS automatically.",
   "guide.python.docsLink": "Full design doc on GitHub",
+
+  // Vercel relay guide
+  "guide.vercel.title": "Vercel Relay Mode",
+  "guide.vercel.optional": "Alternative",
+  "guide.vercel.body": "Vercel runs the relay as a Node.js function on its serverless edge. No Google account, 800 s max duration on Pro / 300 s on Hobby, and streaming responses bypass the 4.5 MB body cap. Pick this if Apps Script's quota or 20 MB per-call cap is biting.",
+  "guide.vercel.whyTitle": "When to use it",
+  "guide.vercel.why1": "You hit Apps Script's daily call quota and don't want to juggle multiple Google accounts.",
+  "guide.vercel.why2": "You want a 30-second deploy with no manual deployment-ID copy-paste.",
+  "guide.vercel.why3": "You need streaming responses without the 4.5 MB body cap.",
+  "guide.vercel.deployTitle": "Deploy to Vercel",
+  "guide.vercel.deploy1": "Click the Deploy to Vercel button below — it clones the vercel/ subtree from this repo into your account.",
+  "guide.vercel.deploy2": "When prompted, set RELAY_TOKEN to the same auth_key you use locally. The function rejects every request whose X-Relay-Token doesn't match.",
+  "guide.vercel.deploy3": "After Vercel finishes deploying, copy the *.vercel.app URL.",
+  "guide.vercel.deploy4": "In the Wizard's Vercel mode card (or the Mode step), paste the URL and click Test connection.",
+  "guide.vercel.deployCta": "Deploy to Vercel",
+  "guide.vercel.envTitle": "Configuration",
+  "guide.vercel.envBody": "RELAY_TOKEN is the only required env var. MAX_BODY_BYTES (default 25 MB) controls when the function falls back to the chunked Range download path — raise it on Pro plans if you want bigger single-shot responses.",
+  "guide.vercel.mixTitle": "Mixing modes",
+  "guide.vercel.mixBody": "Each account in Settings → Accounts has a Provider dropdown. Set some to Apps Script and some to Vercel and the scheduler will load-balance between them under whatever strategy you've picked.",
 };
 
 const fa: Strings = {
@@ -627,6 +681,7 @@ const fa: Strings = {
   // Sidebar / nav additions
   "nav.wizard": "راه‌اندازی گام‌به‌گام",
   "nav.pythonRelayGuide": "رله پایتون",
+  "nav.vercelRelayGuide": "رله Vercel",
 
   // Wizard — chrome
   "wizard.topbar.setup": "راه‌اندازی اولیه",
@@ -639,10 +694,41 @@ const fa: Strings = {
   // Wizard — Step rail
   "wizard.rail.title": "گام‌های راه‌اندازی",
   "wizard.rail.welcome": "خوش‌آمد",
+  "wizard.rail.mode": "حالت رله",
   "wizard.rail.auth": "کلید احراز",
   "wizard.rail.account": "حساب",
   "wizard.rail.cert": "اعتماد به CA",
   "wizard.rail.done": "پایان",
+
+  // Wizard — Mode picker
+  "wizard.mode.title": "انتخاب بک‌اند رله",
+  "wizard.mode.body": "XenRelayProxy می‌تواند ترافیک را از Google Apps Script (رایگان اما با سهمیه) یا یک تابع Vercel که در ۳۰ ثانیه مستقر می‌شود عبور دهد. بعداً قابل تغییر است یا می‌توانید برای هر حساب جدا تنظیم کنید.",
+  "wizard.mode.apps.title": "Apps Script",
+  "wizard.mode.apps.body": "خروج رایگان از طریق گوگل. سقف ۲۰ مگابایت در هر فراخوانی و سهمیهٔ روزانه دارد.",
+  "wizard.mode.apps.b1": "نیاز به هیچ زیرساختی نیست",
+  "wizard.mode.apps.b2": "نیاز به حساب گوگل و استقرار دستی",
+  "wizard.mode.apps.b3": "سهمیهٔ روزانه: ۲۰هزار مصرف‌کننده / ۱۰۰هزار Workspace",
+  "wizard.mode.vercel.title": "Vercel",
+  "wizard.mode.vercel.body": "یک تابع کوچک Node با یک کلیک مستقر کنید. پاسخ استریم، تایم‌اوت بلندتر، بدون نیاز به حساب گوگل.",
+  "wizard.mode.vercel.b1": "استقرار یک‌کلیکی در ۳۰ ثانیه",
+  "wizard.mode.vercel.b2": "تا ۸۰۰ ثانیه (Pro) / ۳۰۰ ثانیه (Hobby) برای هر فراخوانی",
+  "wizard.mode.vercel.b3": "پاسخ‌های استریم سقف ۴٫۵ مگابایتی بدنه را دور می‌زنند",
+  "wizard.mode.switchHint": "هر زمان از نوار کناری می‌توانید حالت را عوض کنید — حساب‌ها و CA حفظ می‌شوند.",
+
+  // Wizard — Vercel account step
+  "wizard.vercel.title": "استقرار رله Vercel",
+  "wizard.vercel.body": "روی دکمهٔ زیر بزنید تا تابع رله در حساب Vercel شما کلون شود، سپس آدرس به‌دست‌آمده را اینجا قرار دهید.",
+  "wizard.vercel.step1": "روی Deploy to Vercel کلیک کنید — Vercel نام پروژه و RELAY_TOKEN را می‌پرسد.",
+  "wizard.vercel.step2": "RELAY_TOKEN را برابر کلید احراز گام قبل قرار دهید (همان رمز در هر دو طرف).",
+  "wizard.vercel.step3": "Vercel یک آدرس *.vercel.app برمی‌گرداند — آن را در فیلد زیر بگذارید و Test connection را بزنید.",
+  "wizard.vercel.deployCta": "استقرار در Vercel",
+  "wizard.vercel.urlLabel": "آدرس استقرار Vercel",
+  "wizard.vercel.urlHelp": "فقط ریشه استقرار، مثل https://my-relay.vercel.app — مسیر /api/tunnel به‌صورت خودکار افزوده می‌شود.",
+  "wizard.vercel.urlRequired": "آدرس Vercel الزامی است.",
+  "wizard.vercel.urlScheme": "آدرس باید با http:// یا https:// شروع شود.",
+  "wizard.vercel.testCta": "آزمایش اتصال",
+  "wizard.vercel.testing": "در حال آزمایش…",
+  "wizard.vercel.testOk": "اتصال موفق. کلید احراز با RELAY_TOKEN روی استقرار مطابقت دارد.",
 
   // Wizard — Welcome
   "wizard.welcome.title": "به XenRelayProxy خوش آمدید",
@@ -663,6 +749,7 @@ const fa: Strings = {
   "wizard.auth.placeholderError": "کلید احراز نباید خالی یا مقدار پیش‌فرض باشد.",
   "wizard.auth.frontDomainRequired": "دامنهٔ Front الزامی است.",
   "wizard.auth.help": "این کلید مشترک، پروکسی محلی شما را به استقرار Apps Script شناسانده می‌کند.",
+  "wizard.auth.helpVercel": "این کلید در هدر X-Relay-Token هر فراخوانی به Vercel ارسال می‌شود و باید با RELAY_TOKEN روی استقرار یکی باشد.",
   "wizard.auth.frontDomainLabel": "دامنهٔ Front",
   "wizard.auth.frontDomainHelp": "دامنه‌ای از Google که پروکسی به آن متصل می‌شود. مقدار پیش‌فرض برای اکثر کاربران مناسب است.",
 
@@ -709,10 +796,12 @@ const fa: Strings = {
   // Wizard — Done
   "wizard.done.title": "همه چیز آماده است",
   "wizard.done.body": "تنظیمات ذخیره شد. Start Proxy را بزنید تا تونل برقرار شود — هر زمان خواستید می‌توانید این جادوگر را از نوار کناری دوباره اجرا کنید.",
+  "wizard.done.summaryMode": "حالت رله",
   "wizard.done.summaryAuthKey": "کلید احراز",
   "wizard.done.summaryAccount": "حساب",
   "wizard.done.summaryDeployments": "استقرار",
   "wizard.done.summaryFrontIP": "IP فرانت گوگل",
+  "wizard.done.summaryVercelURL": "آدرس Vercel",
   "wizard.done.start": "شروع پروکسی",
   "wizard.done.starting": "در حال شروع…",
 
@@ -732,6 +821,25 @@ const fa: Strings = {
   "guide.python.wireTitle": "اتصال در Code.gs",
   "guide.python.wireBody": "Code.gs مستقرشده را ویرایش کنید و RELAY_URL و RELAY_KEY را تنظیم کنید. Apps Script به‌صورت خودکار ترافیک را از VPS شما عبور می‌دهد.",
   "guide.python.docsLink": "مستندات کامل در GitHub",
+
+  // Vercel relay guide
+  "guide.vercel.title": "حالت رله Vercel",
+  "guide.vercel.optional": "گزینه جایگزین",
+  "guide.vercel.body": "Vercel رله را به‌عنوان یک تابع Node.js روی لبه serverless اجرا می‌کند. بدون نیاز به حساب گوگل، تا ۸۰۰ ثانیه (Pro) یا ۳۰۰ ثانیه (Hobby) برای هر فراخوانی، و پاسخ‌های استریم سقف ۴٫۵ مگابایتی بدنه را دور می‌زنند. اگر سهمیه یا سقف ۲۰ مگابایتی Apps Script برایتان مشکل‌ساز است این را انتخاب کنید.",
+  "guide.vercel.whyTitle": "چه زمانی استفاده شود",
+  "guide.vercel.why1": "به سهمیه روزانه Apps Script برخورده‌اید و نمی‌خواهید چند حساب گوگل داشته باشید.",
+  "guide.vercel.why2": "استقرار ۳۰ ثانیه‌ای بدون کپی-پیست دستی Deployment ID می‌خواهید.",
+  "guide.vercel.why3": "به پاسخ‌های استریم بدون سقف ۴٫۵ مگابایتی بدنه نیاز دارید.",
+  "guide.vercel.deployTitle": "استقرار در Vercel",
+  "guide.vercel.deploy1": "روی دکمه «استقرار در Vercel» بزنید — زیرشاخه vercel/ از همین مخزن در حساب شما کلون می‌شود.",
+  "guide.vercel.deploy2": "هنگام درخواست، RELAY_TOKEN را برابر همان auth_key محلی قرار دهید. تابع هر درخواستی با X-Relay-Token متفاوت را رد می‌کند.",
+  "guide.vercel.deploy3": "پس از اتمام استقرار، آدرس *.vercel.app را کپی کنید.",
+  "guide.vercel.deploy4": "در کارت Vercel ویزارد (یا گام انتخاب حالت) آدرس را قرار دهید و Test connection را بزنید.",
+  "guide.vercel.deployCta": "استقرار در Vercel",
+  "guide.vercel.envTitle": "تنظیمات",
+  "guide.vercel.envBody": "تنها متغیر محیطی الزامی RELAY_TOKEN است. MAX_BODY_BYTES (پیش‌فرض ۲۵ مگابایت) آستانه برگشت به دانلود قطعه‌قطعه را تعیین می‌کند — در طرح Pro می‌توانید آن را افزایش دهید.",
+  "guide.vercel.mixTitle": "ترکیب حالت‌ها",
+  "guide.vercel.mixBody": "هر حساب در تنظیمات → حساب‌ها دارای یک منوی Provider است. می‌توانید برخی را روی Apps Script و برخی را روی Vercel بگذارید — زمان‌بند طبق راهبرد انتخابی بین آن‌ها بار را توزیع می‌کند.",
 };
 
 const dictionaries: Record<Locale, Strings> = { en, fa };

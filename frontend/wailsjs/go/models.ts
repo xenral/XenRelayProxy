@@ -9,6 +9,8 @@ export namespace config {
 	    enabled: boolean;
 	    weight: number;
 	    daily_quota: number;
+	    provider?: string;
+	    vercel_url?: string;
 	
 	    static createFrom(source: any = {}) {
 	        return new Account(source);
@@ -24,6 +26,8 @@ export namespace config {
 	        this.enabled = source["enabled"];
 	        this.weight = source["weight"];
 	        this.daily_quota = source["daily_quota"];
+	        this.provider = source["provider"];
+	        this.vercel_url = source["vercel_url"];
 	    }
 	}
 	export class Scheduler {

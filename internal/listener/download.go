@@ -392,6 +392,14 @@ func (s *Server) runChunked(req *http.Request, sw streamWriter, currentURL *url.
 				ch <- chunkResult{err: err}
 				return
 			}
+			// Account for received bytes the moment the chunk arrives from
+			// upstream — same basis as the bytes_down metric. Doing this
+			// here (instead of after the in-order WriteBody below) keeps
+			// the progress bar aligned with the "Downloaded" stat tile and
+			// makes the bar advance smoothly with parallel arrivals
+			// rather than jumping each time chunk-N-in-order completes.
+			s.downloads.AddBytes(dlID, int64(len(part)))
+			s.downloads.ChunkDone(dlID)
 			ch <- chunkResult{data: part}
 		}(chunkIdx, start, end, ready[i])
 	}
@@ -414,8 +422,6 @@ func (s *Server) runChunked(req *http.Request, sw streamWriter, currentURL *url.
 			break
 		}
 		_ = sw.Flush()
-		s.downloads.AddBytes(dlID, int64(len(res.data)))
-		s.downloads.ChunkDone(dlID)
 	}
 
 	// Wait for all goroutines to finish (even if we broke early).

@@ -28,6 +28,8 @@ export function SaveConfig(arg1:config.Config):Promise<void>;
 
 export function ScanFrontIPs():Promise<Array<frontscan.Result>>;
 
+export function SetMode(arg1:string):Promise<void>;
+
 export function Start():Promise<void>;
 
 export function Stats():Promise<relayvpn.Stats>;
@@ -35,6 +37,8 @@ export function Stats():Promise<relayvpn.Stats>;
 export function Status():Promise<relayvpn.Status>;
 
 export function Stop():Promise<void>;
+
+export function TestVercelEndpoint(arg1:string,arg2:string):Promise<void>;
 
 export function ToggleAccount(arg1:string,arg2:boolean):Promise<void>;
 

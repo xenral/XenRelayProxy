@@ -1,0 +1,14 @@
+{
+  "name": "xenrelayproxy-vercel",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Vercel relay backend for XenRelayProxy. Tunnels HTTP/HTTPS over a Node.js function so the Wails desktop app can route traffic through Vercel instead of (or alongside) Google Apps Script.",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "@vercel/node": "^3.2.0",
+    "typescript": "^5.4.0"
+  }
+}
