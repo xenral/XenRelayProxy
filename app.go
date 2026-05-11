@@ -122,6 +122,14 @@ func (a *App) GenerateAuthKey() (string, error) {
 	return a.api.GenerateAuthKey()
 }
 
+func (a *App) SetMode(mode string) error {
+	return a.api.SetMode(mode)
+}
+
+func (a *App) TestVercelEndpoint(url, token string) error {
+	return a.api.TestVercelEndpoint(url, token)
+}
+
 func (a *App) GetCodeGS() string {
 	return a.codeGS
 }

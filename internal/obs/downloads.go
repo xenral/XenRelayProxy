@@ -41,6 +41,12 @@ type activeDownload struct {
 	errMsg     string
 	startedAt  time.Time
 	cancel     func() // optional; invoked by Cancel to abort in-flight chunk fetches
+	// Sliding-window speed state. lastSampleAt/lastSampleBytes anchor each
+	// Snapshot's delta computation; bps is the EMA-smoothed bytes/sec we
+	// report to the UI. Mutated under Downloads.mu inside Snapshot.
+	lastSampleAt    time.Time
+	lastSampleBytes int64
+	bps             int64
 }
 
 type Downloads struct {
@@ -54,16 +60,18 @@ func NewDownloads() *Downloads {
 }
 
 func (d *Downloads) Start(id, rawURL, filename string, totalBytes int64, chunks int) {
+	now := time.Now()
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	d.active[id] = &activeDownload{
-		id:        id,
-		url:       rawURL,
-		filename:  filename,
-		total:     totalBytes,
-		chunks:    chunks,
-		status:    DownloadActive,
-		startedAt: time.Now(),
+		id:           id,
+		url:          rawURL,
+		filename:     filename,
+		total:        totalBytes,
+		chunks:       chunks,
+		status:       DownloadActive,
+		startedAt:    now,
+		lastSampleAt: now,
 	}
 }
 
@@ -149,15 +157,34 @@ func (d *Downloads) NextID() string {
 }
 
 func (d *Downloads) Snapshot() []DownloadEntry {
+	now := time.Now()
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	out := make([]DownloadEntry, 0, len(d.active))
 	for _, dl := range d.active {
 		doneBytes := dl.done.Load()
-		elapsed := time.Since(dl.startedAt).Seconds()
-		var bps int64
-		if elapsed > 0.5 {
-			bps = int64(float64(doneBytes) / elapsed)
+		// Recompute instantaneous bytes/sec from the delta since the last
+		// Snapshot, then smooth with an EMA so transient jitter (chunk
+		// boundaries, scheduler hops) doesn't make the UI value flicker.
+		// Using a sliding-window delta — rather than doneBytes/totalElapsed —
+		// is what lets the indicator track real, current throughput instead
+		// of collapsing to a lifetime average that never updates.
+		if dl.status == DownloadActive {
+			dt := now.Sub(dl.lastSampleAt).Seconds()
+			if dt >= 0.1 {
+				delta := max(doneBytes-dl.lastSampleBytes, 0)
+				instant := int64(float64(delta) / dt)
+				const alpha = 0.4
+				if dl.bps == 0 {
+					dl.bps = instant
+				} else {
+					dl.bps = int64(alpha*float64(instant) + (1-alpha)*float64(dl.bps))
+				}
+				dl.lastSampleAt = now
+				dl.lastSampleBytes = doneBytes
+			}
+		} else {
+			dl.bps = 0
 		}
 		out = append(out, DownloadEntry{
 			ID:          dl.id,
@@ -170,7 +197,7 @@ func (d *Downloads) Snapshot() []DownloadEntry {
 			Status:      dl.status,
 			Error:       dl.errMsg,
 			StartedAt:   dl.startedAt.Format(time.RFC3339),
-			BytesPerSec: bps,
+			BytesPerSec: dl.bps,
 		})
 	}
 	return out

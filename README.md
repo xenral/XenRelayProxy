@@ -20,6 +20,23 @@ A Go/Wails desktop rewrite of [MasterHttpRelayVPN](https://github.com/masterking
 - **Front-IP scanner** to find the fastest reachable Google fronting IP.
 - **Long-poll/SSE blocker** so Apps Script doesn't waste a 6-min slot on a hanging socket.
 - **Optional self-hosted relay** (`server_relay/relay.py`) when you want to bypass Apps Script's UrlFetchApp limits.
+- **Vercel mode** — deploy a tiny Node.js function with one click and route traffic through Vercel instead of (or alongside) Apps Script. No Google account, 800 s max duration on Pro, streaming responses bypass the 4.5 MB body cap.
+
+---
+
+## Vercel mode (alternative backend)
+
+Apps Script is free but limited: 20 MB per call, ~6-minute ceiling, daily quota. **Vercel mode** routes the same traffic through a Node.js function you deploy in 30 seconds:
+
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FAlimorshedZade%2FXenRelayProxy&root-directory=vercel&env=RELAY_TOKEN)
+
+1. Click the button above. Vercel asks for a project name and `RELAY_TOKEN`.
+2. Set `RELAY_TOKEN` to the same auth key you use locally — the function rejects every request whose `X-Relay-Token` header doesn't match.
+3. Vercel returns a `*.vercel.app` URL. Paste it into the **Wizard → Vercel mode** step and click **Test connection**.
+
+Or pick **Vercel** in the Wizard's first step — the in-app flow walks you through the same deploy. You can also mix backends: each account in **Settings → Accounts** has a `Provider` field (`apps_script` / `vercel` / inherit-from-config-mode), and the scheduler load-balances across them with whatever strategy you've picked.
+
+The relay function lives under [`vercel/`](./vercel/) — the wire format (`Envelope` / `Reply`, `{e:"too_large"}` chunked-fallback signal) is identical to Apps Script, so the rest of the proxy stack works unchanged.
 
 ---
 

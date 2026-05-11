@@ -1,10 +1,16 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle, ArrowLeft, ArrowRight, Check, Copy, ExternalLink,
-  KeyRound, Loader2, RefreshCw, Rocket, ShieldCheck, ShieldOff,
+  AlertTriangle, ArrowLeft, ArrowRight, Check, Cloud, Copy, ExternalLink,
+  KeyRound, Loader2, PlugZap, RefreshCw, Rocket, ShieldCheck, ShieldOff,
   Sparkles, Wifi, Wand2, X,
 } from "lucide-react";
 import { translate, type Locale } from "./i18n";
+
+/* ─── Relay mode ─────────────────────────────────────────────── */
+
+type RelayMode = "apps_script" | "vercel";
+const VERCEL_DEPLOY_URL =
+  "https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FAlimorshedZade%2FXenRelayProxy&root-directory=vercel&env=RELAY_TOKEN&envDescription=Shared%20secret%20your%20XenRelayProxy%20client%20presents.";
 
 /* ─── Native bridge ──────────────────────────────────────────── */
 
@@ -29,8 +35,8 @@ async function call<T>(name: string, ...args: unknown[]): Promise<T> {
 
 /* ─── Types ──────────────────────────────────────────────────── */
 
-type Step = "welcome" | "auth" | "account" | "cert" | "done";
-const ORDER: Step[] = ["welcome", "auth", "account", "cert", "done"];
+type Step = "welcome" | "mode" | "auth" | "account" | "cert" | "done";
+const ORDER: Step[] = ["welcome", "mode", "auth", "account", "cert", "done"];
 
 type ScanResult = { ip: string; rtt_ms: number; ok: boolean; error?: string; recommend: boolean };
 
@@ -50,6 +56,7 @@ function StepRail({ t, current, furthest, onJump }: {
 }) {
   const items: [Step, string, React.ElementType][] = [
     ["welcome", "wizard.rail.welcome", Sparkles],
+    ["mode", "wizard.rail.mode", Cloud],
     ["auth", "wizard.rail.auth", KeyRound],
     ["account", "wizard.rail.account", Wand2],
     ["cert", "wizard.rail.cert", ShieldCheck],
@@ -90,6 +97,7 @@ export default function Wizard({ locale, onLocaleChange, onComplete }: WizardPro
   const [step, setStep] = useState<Step>("welcome");
   const [furthest, setFurthest] = useState(0);
 
+  const [mode, setMode] = useState<RelayMode>("apps_script");
   const [authKey, setAuthKey] = useState("");
   const [frontDomain, setFrontDomain] = useState("www.google.com");
   const [googleIP, setGoogleIP] = useState("216.239.38.120");
@@ -97,6 +105,7 @@ export default function Wizard({ locale, onLocaleChange, onComplete }: WizardPro
   const [accLabel, setAccLabel] = useState("default");
   const [accEmail, setAccEmail] = useState("");
   const [scriptIDs, setScriptIDs] = useState<string[]>([]);
+  const [vercelURL, setVercelURL] = useState("");
   const [dailyQuota, setDailyQuota] = useState(20000);
 
   const [savingErr, setSavingErr] = useState<string | null>(null);
@@ -107,6 +116,7 @@ export default function Wizard({ locale, onLocaleChange, onComplete }: WizardPro
       try {
         const cfg: any = await call("GetConfig");
         if (cancelled) return;
+        if (cfg.mode === "vercel" || cfg.mode === "apps_script") setMode(cfg.mode);
         if (cfg.auth_key && !isPlaceholderKey(cfg.auth_key)) setAuthKey(cfg.auth_key);
         else {
           const fresh = await call<string>("GenerateAuthKey");
@@ -119,6 +129,7 @@ export default function Wizard({ locale, onLocaleChange, onComplete }: WizardPro
           setAccLabel(a.label || "default");
           setAccEmail(a.email || "");
           setScriptIDs(a.script_ids || (a.script_id ? [a.script_id] : []));
+          if (a.vercel_url) setVercelURL(a.vercel_url);
           setDailyQuota(a.daily_quota || 20000);
         }
       } catch {
@@ -144,21 +155,34 @@ export default function Wizard({ locale, onLocaleChange, onComplete }: WizardPro
     setSavingErr(null);
     try {
       const cfg: any = await call("GetConfig");
+      const accountBase: any = {
+        label: accLabel || "default",
+        email: accEmail,
+        account_type: "consumer",
+        enabled: true,
+        weight: 1,
+        daily_quota: dailyQuota,
+      };
+      if (mode === "vercel") {
+        accountBase.provider = "vercel";
+        accountBase.vercel_url = vercelURL.trim();
+        // Keep existing script_ids if present so a flip back to apps_script still works.
+        const prev = (cfg.accounts || []).find((a: any) => a.label === (accLabel || "default"));
+        if (prev?.script_ids?.length) accountBase.script_ids = prev.script_ids;
+      } else {
+        accountBase.script_ids = scriptIDs;
+        // Clear vercel-only fields when the user picks Apps Script.
+        accountBase.provider = "";
+        accountBase.vercel_url = "";
+      }
       const merged = {
         ...cfg,
+        mode,
         auth_key: authKey,
         front_domain: frontDomain,
         google_ip: googleIP,
         accounts: [
-          {
-            label: accLabel || "default",
-            email: accEmail,
-            script_ids: scriptIDs,
-            account_type: "consumer",
-            enabled: true,
-            weight: 1,
-            daily_quota: dailyQuota,
-          },
+          accountBase,
           ...((cfg.accounts || []).filter((a: any) => a.label && a.label !== (accLabel || "default"))),
         ],
         ...extra,
@@ -176,10 +200,15 @@ export default function Wizard({ locale, onLocaleChange, onComplete }: WizardPro
   async function next() {
     if (step === "auth") {
       if (isPlaceholderKey(authKey)) { setSavingErr(t("wizard.auth.placeholderError")); return; }
-      if (!frontDomain.trim()) { setSavingErr(t("wizard.auth.frontDomainRequired")); return; }
+      if (mode === "apps_script" && !frontDomain.trim()) { setSavingErr(t("wizard.auth.frontDomainRequired")); return; }
     }
     if (step === "account") {
-      if (scriptIDs.length === 0) { setSavingErr(t("wizard.account.scriptIdsRequired")); return; }
+      if (mode === "vercel") {
+        if (!vercelURL.trim()) { setSavingErr(t("wizard.vercel.urlRequired")); return; }
+        if (!/^https?:\/\//i.test(vercelURL.trim())) { setSavingErr(t("wizard.vercel.urlScheme")); return; }
+      } else if (scriptIDs.length === 0) {
+        setSavingErr(t("wizard.account.scriptIdsRequired")); return;
+      }
     }
     await persistDraft();
     if (stepIndex < ORDER.length - 1) go(ORDER[stepIndex + 1]);
@@ -205,12 +234,16 @@ export default function Wizard({ locale, onLocaleChange, onComplete }: WizardPro
               t={t}
               locale={locale}
               onLocaleChange={onLocaleChange}
-              onNext={() => go("auth")}
+              onNext={() => go("mode")}
             />
+          )}
+          {step === "mode" && (
+            <ModeStep t={t} mode={mode} setMode={setMode} />
           )}
           {step === "auth" && (
             <AuthStep
               t={t}
+              mode={mode}
               authKey={authKey}
               setAuthKey={setAuthKey}
               frontDomain={frontDomain}
@@ -218,24 +251,36 @@ export default function Wizard({ locale, onLocaleChange, onComplete }: WizardPro
             />
           )}
           {step === "account" && (
-            <AccountStep
-              t={t}
-              authKey={authKey}
-              accLabel={accLabel} setAccLabel={setAccLabel}
-              accEmail={accEmail} setAccEmail={setAccEmail}
-              scriptIDs={scriptIDs} setScriptIDs={setScriptIDs}
-              dailyQuota={dailyQuota} setDailyQuota={setDailyQuota}
-              googleIP={googleIP} setGoogleIP={setGoogleIP}
-            />
+            mode === "vercel" ? (
+              <VercelAccountStep
+                t={t}
+                authKey={authKey}
+                accLabel={accLabel} setAccLabel={setAccLabel}
+                vercelURL={vercelURL} setVercelURL={setVercelURL}
+                dailyQuota={dailyQuota} setDailyQuota={setDailyQuota}
+              />
+            ) : (
+              <AccountStep
+                t={t}
+                authKey={authKey}
+                accLabel={accLabel} setAccLabel={setAccLabel}
+                accEmail={accEmail} setAccEmail={setAccEmail}
+                scriptIDs={scriptIDs} setScriptIDs={setScriptIDs}
+                dailyQuota={dailyQuota} setDailyQuota={setDailyQuota}
+                googleIP={googleIP} setGoogleIP={setGoogleIP}
+              />
+            )
           )}
           {step === "cert" && <CertStep t={t} />}
           {step === "done" && (
             <DoneStep
               t={t}
+              mode={mode}
               authKey={authKey}
               accLabel={accLabel}
               scriptIDs={scriptIDs}
               googleIP={googleIP}
+              vercelURL={vercelURL}
               onStart={async () => {
                 await persistDraft({ setup_completed: true });
                 try { await call("MarkSetupCompleted"); } catch {}
@@ -327,10 +372,89 @@ function WelcomeStep({ t, locale, onLocaleChange, onNext }: {
   );
 }
 
-/* ─── Step 2: Auth Key + Front Domain ────────────────────────── */
+/* ─── Step 2: Mode picker (Apps Script vs Vercel) ────────────── */
 
-function AuthStep({ t, authKey, setAuthKey, frontDomain, setFrontDomain }: {
+function ModeStep({
+  t, mode, setMode,
+}: {
+  t: (k: string, vars?: any) => string;
+  mode: RelayMode;
+  setMode: (m: RelayMode) => void;
+}) {
+  const cards: {
+    id: RelayMode; icon: React.ElementType; title: string; body: string; bullets: string[];
+  }[] = [
+    {
+      id: "apps_script",
+      icon: Wand2,
+      title: t("wizard.mode.apps.title"),
+      body: t("wizard.mode.apps.body"),
+      bullets: [
+        t("wizard.mode.apps.b1"),
+        t("wizard.mode.apps.b2"),
+        t("wizard.mode.apps.b3"),
+      ],
+    },
+    {
+      id: "vercel",
+      icon: Cloud,
+      title: t("wizard.mode.vercel.title"),
+      body: t("wizard.mode.vercel.body"),
+      bullets: [
+        t("wizard.mode.vercel.b1"),
+        t("wizard.mode.vercel.b2"),
+        t("wizard.mode.vercel.b3"),
+      ],
+    },
+  ];
+
+  return (
+    <div className="wiz-card">
+      <div className="wiz-card-head">
+        <Cloud size={18} />
+        <h2>{t("wizard.mode.title")}</h2>
+      </div>
+      <p className="wiz-lead">{t("wizard.mode.body")}</p>
+
+      <div className="wiz-mode-grid">
+        {cards.map((card) => {
+          const Icon = card.icon;
+          const active = mode === card.id;
+          return (
+            <button
+              key={card.id}
+              type="button"
+              className={`wiz-mode-card ${active ? "active" : ""}`}
+              onClick={() => setMode(card.id)}
+            >
+              <div className="wiz-mode-card-head">
+                <Icon size={18} />
+                <strong>{card.title}</strong>
+                {active && <Check size={14} color="var(--success)" />}
+              </div>
+              <p>{card.body}</p>
+              <ul>
+                {card.bullets.map((b) => (
+                  <li key={b}>{b}</li>
+                ))}
+              </ul>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="wiz-hint" style={{ marginTop: 14 }}>
+        {t("wizard.mode.switchHint")}
+      </div>
+    </div>
+  );
+}
+
+/* ─── Step 3: Auth Key (+ Front Domain when Apps Script) ─────── */
+
+function AuthStep({ t, mode, authKey, setAuthKey, frontDomain, setFrontDomain }: {
   t: (k: string) => string;
+  mode: RelayMode;
   authKey: string; setAuthKey: (s: string) => void;
   frontDomain: string; setFrontDomain: (s: string) => void;
 }) {
@@ -384,22 +508,137 @@ function AuthStep({ t, authKey, setAuthKey, frontDomain, setFrontDomain }: {
           <AlertTriangle size={12} /> {t("wizard.auth.placeholderError")}
         </div>
       )}
-      <div className="wiz-hint">{t("wizard.auth.help")}</div>
+      <div className="wiz-hint">
+        {mode === "vercel" ? t("wizard.auth.helpVercel") : t("wizard.auth.help")}
+      </div>
 
-      <label className="wiz-label" style={{ marginTop: 18 }}>{t("wizard.auth.frontDomainLabel")}</label>
-      <input
-        className="wiz-input mono"
-        value={frontDomain}
-        onChange={(e) => setFrontDomain(e.target.value)}
-        spellCheck={false}
-        placeholder="www.google.com"
-      />
-      <div className="wiz-hint">{t("wizard.auth.frontDomainHelp")}</div>
+      {mode === "apps_script" && (
+        <>
+          <label className="wiz-label" style={{ marginTop: 18 }}>{t("wizard.auth.frontDomainLabel")}</label>
+          <input
+            className="wiz-input mono"
+            value={frontDomain}
+            onChange={(e) => setFrontDomain(e.target.value)}
+            spellCheck={false}
+            placeholder="www.google.com"
+          />
+          <div className="wiz-hint">{t("wizard.auth.frontDomainHelp")}</div>
+        </>
+      )}
     </div>
   );
 }
 
-/* ─── Step 3: Account + Code.gs + IP scan ────────────────────── */
+/* ─── Step 4 (Vercel mode): URL + test connection ────────────── */
+
+function VercelAccountStep({
+  t, authKey,
+  accLabel, setAccLabel,
+  vercelURL, setVercelURL,
+  dailyQuota, setDailyQuota,
+}: {
+  t: (k: string, vars?: any) => string;
+  authKey: string;
+  accLabel: string; setAccLabel: (s: string) => void;
+  vercelURL: string; setVercelURL: (s: string) => void;
+  dailyQuota: number; setDailyQuota: (n: number) => void;
+}) {
+  const [testing, setTesting] = useState(false);
+  const [testOk, setTestOk] = useState<null | boolean>(null);
+  const [testMsg, setTestMsg] = useState<string>("");
+
+  async function runTest() {
+    setTesting(true); setTestOk(null); setTestMsg("");
+    try {
+      await call("TestVercelEndpoint", vercelURL.trim(), authKey);
+      setTestOk(true);
+      setTestMsg(t("wizard.vercel.testOk"));
+    } catch (err: any) {
+      setTestOk(false);
+      setTestMsg(String(err?.message || err));
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return (
+    <div className="wiz-card">
+      <div className="wiz-card-head">
+        <Cloud size={18} />
+        <h2>{t("wizard.vercel.title")}</h2>
+      </div>
+      <p className="wiz-lead">{t("wizard.vercel.body")}</p>
+
+      <ol className="wiz-steps">
+        <li>{t("wizard.vercel.step1")}</li>
+        <li>{t("wizard.vercel.step2")}</li>
+        <li>{t("wizard.vercel.step3")}</li>
+      </ol>
+
+      <a
+        className="wiz-btn primary"
+        href={VERCEL_DEPLOY_URL}
+        target="_blank"
+        rel="noreferrer"
+        style={{ alignSelf: "flex-start", marginTop: 6 }}
+      >
+        <Cloud size={14} />
+        <span>{t("wizard.vercel.deployCta")}</span>
+        <ExternalLink size={12} />
+      </a>
+
+      <div className="wiz-grid-2" style={{ marginTop: 18 }}>
+        <div>
+          <label className="wiz-label">{t("wizard.account.label")}</label>
+          <input className="wiz-input" value={accLabel} onChange={(e) => setAccLabel(e.target.value)} />
+        </div>
+        <div>
+          <label className="wiz-label">{t("wizard.account.quota")}</label>
+          <input
+            type="number"
+            className="wiz-input"
+            value={dailyQuota}
+            onChange={(e) => setDailyQuota(parseInt(e.target.value || "0", 10) || 20000)}
+          />
+        </div>
+      </div>
+
+      <label className="wiz-label" style={{ marginTop: 14 }}>{t("wizard.vercel.urlLabel")}</label>
+      <div className="wiz-key-row">
+        <input
+          className="wiz-input mono"
+          value={vercelURL}
+          onChange={(e) => { setVercelURL(e.target.value); setTestOk(null); setTestMsg(""); }}
+          placeholder="https://my-relay.vercel.app"
+          spellCheck={false}
+        />
+        <button
+          className="wiz-btn ghost small"
+          onClick={runTest}
+          disabled={testing || !vercelURL.trim() || !authKey}
+          title={t("wizard.vercel.testCta")}
+        >
+          {testing ? <Loader2 size={12} /> : <PlugZap size={12} />}
+          <span>{testing ? t("wizard.vercel.testing") : t("wizard.vercel.testCta")}</span>
+        </button>
+      </div>
+      <div className="wiz-hint">{t("wizard.vercel.urlHelp")}</div>
+
+      {testOk === true && (
+        <div className="wiz-hint" style={{ color: "var(--success)" }}>
+          <Check size={12} /> {testMsg}
+        </div>
+      )}
+      {testOk === false && (
+        <div className="wiz-hint danger">
+          <AlertTriangle size={12} /> {testMsg}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Step 4 (Apps Script mode): Account + Code.gs + IP scan ── */
 
 function AccountStep({
   t, authKey,
@@ -682,11 +921,13 @@ function CertStep({ t }: { t: (k: string) => string }) {
   );
 }
 
-/* ─── Step 5: Done ───────────────────────────────────────────── */
+/* ─── Step 6: Done ───────────────────────────────────────────── */
 
-function DoneStep({ t, authKey, accLabel, scriptIDs, googleIP, onStart }: {
+function DoneStep({ t, mode, authKey, accLabel, scriptIDs, googleIP, vercelURL, onStart }: {
   t: (k: string, vars?: any) => string;
+  mode: RelayMode;
   authKey: string; accLabel: string; scriptIDs: string[]; googleIP: string;
+  vercelURL: string;
   onStart: () => void;
 }) {
   const [starting, setStarting] = useState(false);
@@ -702,17 +943,30 @@ function DoneStep({ t, authKey, accLabel, scriptIDs, googleIP, onStart }: {
 
       <div className="wiz-summary">
         <div className="wiz-summary-row">
+          <span>{t("wizard.done.summaryMode")}</span>
+          <strong>{mode === "vercel" ? t("wizard.mode.vercel.title") : t("wizard.mode.apps.title")}</strong>
+        </div>
+        <div className="wiz-summary-row">
           <span>{t("wizard.done.summaryAuthKey")}</span>
           <strong className="mono-sm">{maskKey(authKey)}</strong>
         </div>
-        <div className="wiz-summary-row">
-          <span>{t("wizard.done.summaryAccount")}</span>
-          <strong>{accLabel} · {scriptIDs.length} {t("wizard.done.summaryDeployments")}</strong>
-        </div>
-        <div className="wiz-summary-row">
-          <span>{t("wizard.done.summaryFrontIP")}</span>
-          <strong className="mono-sm">{googleIP}</strong>
-        </div>
+        {mode === "vercel" ? (
+          <div className="wiz-summary-row">
+            <span>{t("wizard.done.summaryVercelURL")}</span>
+            <strong className="mono-sm">{vercelURL || "—"}</strong>
+          </div>
+        ) : (
+          <>
+            <div className="wiz-summary-row">
+              <span>{t("wizard.done.summaryAccount")}</span>
+              <strong>{accLabel} · {scriptIDs.length} {t("wizard.done.summaryDeployments")}</strong>
+            </div>
+            <div className="wiz-summary-row">
+              <span>{t("wizard.done.summaryFrontIP")}</span>
+              <strong className="mono-sm">{googleIP}</strong>
+            </div>
+          </>
+        )}
       </div>
 
       <button

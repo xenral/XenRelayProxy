@@ -1307,6 +1307,56 @@ tr:hover td { background: rgba(255,255,255,.02); }
   padding: 4px;
 }
 
+/* ── Mode picker (Apps Script vs Vercel) ── */
+.wiz-mode-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  margin-top: 14px;
+}
+@media (max-width: 720px) {
+  .wiz-mode-grid { grid-template-columns: 1fr; }
+}
+.wiz-mode-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  text-align: left;
+  cursor: pointer;
+  color: var(--text);
+  transition: border-color .15s, background .15s;
+}
+.wiz-mode-card:hover { border-color: var(--border-hi); background: rgba(255,255,255,.03); }
+.wiz-mode-card.active {
+  border-color: var(--primary);
+  background: rgba(99,102,241,.08);
+  box-shadow: 0 0 0 1px var(--primary);
+}
+.wiz-mode-card-head {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--primary);
+  font-size: 13.5px;
+}
+.wiz-mode-card-head strong { flex: 1; color: var(--text); }
+.wiz-mode-card p {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-muted);
+  line-height: 1.55;
+}
+.wiz-mode-card ul {
+  margin: 0;
+  padding-left: 18px;
+  font-size: 12px;
+  color: var(--text);
+  line-height: 1.55;
+}
+.wiz-mode-card ul li { margin: 2px 0; }
+
 /* ── Code.gs deploy panel ── */
 .wiz-deploy {
   margin-top: 16px;

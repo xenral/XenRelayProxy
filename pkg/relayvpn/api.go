@@ -4,10 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
+	"net/http"
 	"os"
 	"strings"
 	"sync"
@@ -66,7 +69,7 @@ type Stats struct {
 	Downloads []obs.DownloadEntry `json:"downloads"`
 }
 
-const Version = "1.3.11"
+const Version = "1.4.0"
 
 // CACertInfo holds metadata about the local MITM CA certificate.
 type CACertInfo struct {
@@ -396,6 +399,105 @@ func (a *API) MarkSetupCompleted() error {
 // the wizard saves it as part of SaveConfig once the user accepts it.
 func (a *API) GenerateAuthKey() (string, error) {
 	return config.GenerateAuthKey()
+}
+
+// SetMode switches the top-level relay backend (Apps Script ↔ Vercel)
+// and persists the change. Per-account Provider overrides still take
+// precedence — Mode is the fallback when an account leaves Provider
+// blank. The listener auto-restarts via SaveConfig so the new dispatch
+// applies on the next request.
+func (a *API) SetMode(mode string) error {
+	switch mode {
+	case config.ModeAppsScript, config.ModeVercel:
+		// ok
+	default:
+		return fmt.Errorf("unsupported mode %q — expected %q or %q", mode, config.ModeAppsScript, config.ModeVercel)
+	}
+	cfg, err := a.GetConfig()
+	if err != nil {
+		return err
+	}
+	cfg.Mode = mode
+	if err := a.SaveConfig(cfg); err != nil {
+		return err
+	}
+	a.logs.Add(obs.LevelInfo, "config", "relay mode set to "+mode)
+	return nil
+}
+
+// TestVercelEndpoint verifies that a deployed Vercel function answers
+// at /api/tunnel with the supplied auth token. The wizard calls this
+// before saving so users get a clear green/red signal instead of
+// debugging silent 401s on real traffic later.
+func (a *API) TestVercelEndpoint(rawURL, token string) error {
+	rawURL = strings.TrimSpace(strings.TrimRight(rawURL, "/"))
+	token = strings.TrimSpace(token)
+	if rawURL == "" {
+		return errors.New("vercel_url is required")
+	}
+	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
+		return fmt.Errorf("vercel_url must start with http:// or https:// (got %q)", rawURL)
+	}
+	if token == "" {
+		return errors.New("auth token is required")
+	}
+	body, _ := json.Marshal(map[string]any{
+		"k": token,
+		"u": "https://www.gstatic.com/generate_204",
+		"m": "GET",
+	})
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, rawURL+"/api/tunnel", strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("X-Relay-Token", token)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("connect to %s failed: %w", rawURL, err)
+	}
+	defer resp.Body.Close()
+	respBody, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return fmt.Errorf("auth rejected (HTTP %d) — token does not match RELAY_TOKEN on the Vercel deployment", resp.StatusCode)
+	}
+	if resp.StatusCode == http.StatusNotFound {
+		return fmt.Errorf("HTTP 404 at %s/api/tunnel — function not deployed at this URL?", rawURL)
+	}
+	if resp.StatusCode >= 500 {
+		return fmt.Errorf("relay HTTP %d: %s", resp.StatusCode, truncate(string(respBody), 200))
+	}
+	if resp.StatusCode >= 300 {
+		return fmt.Errorf("relay HTTP %d (unexpected): %s", resp.StatusCode, truncate(string(respBody), 200))
+	}
+	var reply struct {
+		S int    `json:"s"`
+		E string `json:"e"`
+	}
+	if err := json.Unmarshal(respBody, &reply); err != nil {
+		return fmt.Errorf("relay returned non-JSON body — is the URL pointing at the deployment root? (%s)", truncate(string(respBody), 120))
+	}
+	if reply.E == "unauthorized" {
+		return errors.New("auth rejected — token does not match RELAY_TOKEN on the Vercel deployment")
+	}
+	if reply.E != "" {
+		return fmt.Errorf("relay error: %s", reply.E)
+	}
+	if reply.S == 0 {
+		return errors.New("relay reply missing status — function may be returning an unexpected shape")
+	}
+	a.logs.Add(obs.LevelInfo, "config", "vercel endpoint test ok: "+rawURL)
+	return nil
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n] + "…"
 }
 
 func (a *API) ToggleAccount(label string, enabled bool) error {

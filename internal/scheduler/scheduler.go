@@ -22,6 +22,8 @@ type Account struct {
 	Enabled           bool      `json:"enabled"`
 	Weight            float64   `json:"weight"`
 	DailyQuota        int       `json:"daily_quota"`
+	Provider          string    `json:"provider,omitempty"`
+	VercelURL         string    `json:"vercel_url,omitempty"`
 	CallsToday        int       `json:"calls_today"`
 	QuotaWindowStart  time.Time `json:"quota_window_start"`
 	ConsecutiveErrors int       `json:"consecutive_errors"`
@@ -100,6 +102,8 @@ func New(accounts []config.Account, cfg config.Scheduler) *Scheduler {
 			Enabled:          a.Enabled,
 			Weight:           a.Weight,
 			DailyQuota:       a.DailyQuota,
+			Provider:         a.Provider,
+			VercelURL:        a.VercelURL,
 			QuotaWindowStart: now,
 		})
 	}

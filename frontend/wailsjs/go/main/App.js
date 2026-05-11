@@ -50,6 +50,10 @@ export function ScanFrontIPs() {
   return window['go']['main']['App']['ScanFrontIPs']();
 }
 
+export function SetMode(arg1) {
+  return window['go']['main']['App']['SetMode'](arg1);
+}
+
 export function Start() {
   return window['go']['main']['App']['Start']();
 }
@@ -64,6 +68,10 @@ export function Status() {
 
 export function Stop() {
   return window['go']['main']['App']['Stop']();
+}
+
+export function TestVercelEndpoint(arg1, arg2) {
+  return window['go']['main']['App']['TestVercelEndpoint'](arg1, arg2);
 }
 
 export function ToggleAccount(arg1, arg2) {
