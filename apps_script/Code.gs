@@ -38,9 +38,154 @@ function _doSingle(req) {
   if (err) return _json({ e: err });
   if (RELAY_URL) return _doRelayed(req);
 
+  // When the caller has not explicitly disabled redirects (r !== false),
+  // walk the redirect chain manually so we can collect Set-Cookie headers
+  // from every intermediate hop — UrlFetchApp.fetch with followRedirects=true
+  // silently discards cookies set on 302/303/307 responses before the final one.
+  if (req.r !== false) {
+    return _json(_doSingleWithRedirects(req));
+  }
+
   const opts = _buildOpts(req);
   const resp = UrlFetchApp.fetch(req.u, opts);
   return _json(_reply(resp, opts, req));
+}
+
+// _doSingleWithRedirects manually follows up to MAX_HOPS redirect hops,
+// accumulating Set-Cookie headers from each hop into the final reply.
+// Cookies set on intermediate 3xx responses are merged (later hops win on
+// name collisions) and forwarded as if the final response set them all.
+function _doSingleWithRedirects(req) {
+  var MAX_HOPS = 10;
+  var accCookies = []; // accumulated Set-Cookie strings across all hops
+  var cookieJar  = {}; // name → full cookie string (last writer wins)
+
+  var currentUrl = req.u;
+  var currentMethod = String(req.m || "GET").toUpperCase();
+  var currentReq = req;
+  var lastReply = null;
+  var lastOpts  = null;
+
+  for (var hop = 0; hop < MAX_HOPS; hop++) {
+    var opts = _buildOpts(currentReq);
+    opts.followRedirects = false; // we handle redirects ourselves
+
+    var resp;
+    try {
+      resp = UrlFetchApp.fetch(currentUrl, opts);
+    } catch (fetchErr) {
+      return { e: String(fetchErr) };
+    }
+
+    var status = resp.getResponseCode();
+    var reply  = _reply(resp, opts, currentReq);
+
+    // Accumulate cookies from this hop.
+    var hopCookies = reply.c || [];
+    for (var ci = 0; ci < hopCookies.length; ci++) {
+      var sc = hopCookies[ci];
+      var nameEnd = sc.indexOf("=");
+      var cookieName = nameEnd > 0 ? sc.substring(0, nameEnd) : sc;
+      cookieJar[cookieName] = sc;
+    }
+
+    lastReply = reply;
+    lastOpts  = opts;
+
+    // Not a redirect — we're done.
+    if (status < 300 || status >= 400) break;
+
+    // Extract Location header for the next hop.
+    var location = "";
+    var headers = reply.h || {};
+    for (var hk in headers) {
+      if (Object.prototype.hasOwnProperty.call(headers, hk) && hk.toLowerCase() === "location") {
+        var locVal = headers[hk];
+        location = Array.isArray(locVal) ? locVal[0] : String(locVal);
+        break;
+      }
+    }
+    if (!location) break; // redirect without Location — stop
+
+    // Resolve relative Location URLs against the current URL.
+    if (location.charAt(0) === "/") {
+      var parsed = _parseOrigin(currentUrl);
+      location = parsed + location;
+    } else if (!/^https?:\/\//i.test(location)) {
+      break; // non-http scheme — stop
+    }
+
+    // Build a synthetic cookie header for the next hop from accumulated jar.
+    var jarPairs = [];
+    for (var cn in cookieJar) {
+      if (Object.prototype.hasOwnProperty.call(cookieJar, cn)) {
+        var full = cookieJar[cn];
+        var eqIdx = full.indexOf("=");
+        var semiIdx = full.indexOf(";");
+        var val = eqIdx >= 0
+          ? (semiIdx > eqIdx ? full.substring(0, semiIdx) : full.substring(0, full.length))
+          : cn;
+        jarPairs.push(val);
+      }
+    }
+
+    // After a 303 (or 301/302 on non-GET) downgrade to GET per spec.
+    var nextMethod = currentMethod;
+    if (status === 303 || ((status === 301 || status === 302) && currentMethod !== "GET" && currentMethod !== "HEAD")) {
+      nextMethod = "GET";
+    }
+
+    currentUrl = location;
+    currentMethod = nextMethod;
+    currentReq = {
+      u: currentUrl,
+      m: nextMethod,
+      h: _mergeHeaders(req.h, jarPairs.length > 0 ? { "Cookie": jarPairs.join("; ") } : {}),
+      r: false
+    };
+  }
+
+  // Merge all accumulated cookies into the final reply's c field.
+  var allCookies = [];
+  for (var fn in cookieJar) {
+    if (Object.prototype.hasOwnProperty.call(cookieJar, fn)) {
+      allCookies.push(cookieJar[fn]);
+    }
+  }
+  if (lastReply) {
+    lastReply.c = allCookies.length > 0 ? allCookies : lastReply.c;
+    // Also inject them into the h map so older Go decoders see them.
+    if (allCookies.length > 0) {
+      if (!lastReply.h) lastReply.h = {};
+      lastReply.h["set-cookie"] = allCookies;
+    }
+    if (lastReply.d) {
+      lastReply.d.sc = allCookies.length;
+    }
+  }
+  return lastReply || { e: "no response" };
+}
+
+// _parseOrigin returns the scheme+host portion of a URL string.
+function _parseOrigin(url) {
+  var m = url.match(/^(https?:\/\/[^\/]+)/i);
+  return m ? m[1] : "";
+}
+
+// _mergeHeaders merges two header maps, with b winning on collision.
+function _mergeHeaders(a, b) {
+  var out = {};
+  if (a) {
+    for (var k in a) {
+      if (Object.prototype.hasOwnProperty.call(a, k)) out[k] = a[k];
+    }
+  }
+  if (b) {
+    for (var k in b) {
+      if (Object.prototype.hasOwnProperty.call(b, k)) out[k] = b[k];
+    }
+  }
+  return Object.keys(out).length > 0 ? out : undefined;
 }
 
 function _doBatch(items) {

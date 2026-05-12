@@ -214,6 +214,17 @@ func (s *Server) handleMITMStream(host, port string, raw net.Conn, mode MITMMode
 		s.logs.Add(obs.LevelWarn, "mitm", "TLS handshake failed for "+host+" — CA not trusted by browser? "+err.Error())
 		return
 	}
+	// SNI-rewrite mode is a raw application-byte pipe between the
+	// browser's MITM TLS and a re-handshaked TLS toward `google_ip` with
+	// SNI=front_domain. We deliberately do NOT parse HTTP here: YouTube
+	// (and other targets) multiplex many long-lived streams over one
+	// connection, and an HTTP/1 request loop collapses that into head-
+	// of-line-blocked sequential requests, breaking the player. Mirrors
+	// Python proxy_server._do_sni_rewrite_tunnel.
+	if mode == MITMSNIRewrite {
+		s.sniRewritePipe(host, port, tlsConn)
+		return
+	}
 	reader := bufio.NewReader(tlsConn)
 	for {
 		req, err := http.ReadRequest(reader)
@@ -234,36 +245,83 @@ func (s *Server) handleMITMStream(host, port string, raw net.Conn, mode MITMMode
 	}
 }
 
+// sniRewritePipe forwards application bytes between the already-MITM'd
+// client TLS and an outbound TLS to `google_ip` advertising
+// SNI=front_domain. The inbound MITM negotiated ALPN "http/1.1", so the
+// app-layer bytes are HTTP/1.1; we pin the outbound to "http/1.1" as
+// well so the negotiated protocol on both sides matches.
+func (s *Server) sniRewritePipe(host, port string, client *tls.Conn) {
+	sni := s.cfg.FrontDomain
+	if sni == "" {
+		sni = host
+	}
+	upstreamHost := s.cfg.GoogleIP
+	if override := s.router.HostOverride(host); override != "" {
+		upstreamHost = override
+	}
+	target := net.JoinHostPort(upstreamHost, port)
+	dialer := &net.Dialer{
+		Timeout:   time.Duration(s.cfg.TCPConnectTimeout) * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	raw, err := dialer.Dial("tcp", target)
+	if err != nil {
+		s.logs.Add(obs.LevelWarn, "sni-rewrite", "dial "+target+" failed: "+err.Error())
+		return
+	}
+	defer raw.Close()
+	upstream := tls.Client(raw, &tls.Config{
+		ServerName: sni,
+		MinVersion: tls.VersionTLS12,
+		NextProtos: []string{"http/1.1"},
+	})
+	hsCtx, cancel := context.WithTimeout(context.Background(), time.Duration(s.cfg.TLSConnectTimeout)*time.Second)
+	defer cancel()
+	if err := upstream.HandshakeContext(hsCtx); err != nil {
+		s.logs.Add(obs.LevelWarn, "sni-rewrite", "TLS handshake to "+target+" (SNI="+sni+") failed: "+err.Error())
+		return
+	}
+	errc := make(chan error, 2)
+	go func() {
+		_, err := io.Copy(upstream, client)
+		_ = upstream.CloseWrite()
+		errc <- err
+	}()
+	go func() {
+		_, err := io.Copy(client, upstream)
+		_ = client.CloseWrite()
+		errc <- err
+	}()
+	<-errc
+}
+
 func (s *Server) writeRequestResponse(conn net.Conn, req *http.Request, mode MITMMode) error {
-	// Try streaming download first (MITM relay path only).
-	if mode == MITMRelay {
-		sw := &rawConnWriter{w: conn}
-		if handled, err := s.tryStreamDownload(req, sw); handled {
-			if err != nil {
-				resp := errorResponse(req, err, http.StatusBadGateway)
-				if origin := req.Header.Get("Origin"); origin != "" {
-					ensureCORS(resp.Header, origin)
-				}
-				defer resp.Body.Close()
-				return resp.Write(conn)
+	// SNI-rewrite no longer flows through here — it's a raw TLS pipe
+	// (see sniRewritePipe). The mode parameter is kept for symmetry
+	// with the HTTP read loop but only MITMRelay is reachable.
+	_ = mode
+
+	// Try streaming download first.
+	sw := &rawConnWriter{w: conn}
+	if handled, err := s.tryStreamDownload(req, sw); handled {
+		if err != nil {
+			resp := errorResponse(req, err, http.StatusBadGateway)
+			if origin := req.Header.Get("Origin"); origin != "" {
+				ensureCORS(resp.Header, origin)
 			}
-			return nil
+			defer resp.Body.Close()
+			return resp.Write(conn)
 		}
+		return nil
 	}
 
-	var resp *http.Response
-	var err error
-	if mode == MITMSNIRewrite {
-		resp, err = s.doSNIRewrite(req)
-	} else {
-		resp, err = s.responseFor(req)
-	}
+	resp, err := s.responseFor(req)
 	if err != nil {
 		// Safety net: if the relay reported the upstream response was too
 		// large for its per-call cap, retry as a chunked Range download.
 		// Mirrors Python's relay() → too_large → relay_parallel() flow.
 		var tle *protocol.TooLargeError
-		if mode == MITMRelay && errors.As(err, &tle) {
+		if errors.As(err, &tle) {
 			sw := &rawConnWriter{w: conn}
 			if handled, herr := s.tryStreamFromTooLarge(req, sw, tle); handled {
 				if herr != nil {
@@ -461,48 +519,6 @@ func (s *Server) absoluteRequestURL(req *http.Request, host, port string) {
 		}
 	}
 	req.RequestURI = ""
-}
-
-func (s *Server) doSNIRewrite(req *http.Request) (*http.Response, error) {
-	clone := req.Clone(req.Context())
-	clone.RequestURI = ""
-	// SNI rewrite: dial the Google front IP but advertise front_domain in
-	// the TLS handshake, so the ISP only ever sees SNI=front_domain on the
-	// wire. Google's edge routes the request by the inner Host header.
-	// Mirrors Python proxy_server._do_sni_rewrite_tunnel (server_hostname=
-	// fronter.sni_host). Using the request's actual hostname here would
-	// defeat the rewrite entirely.
-	sni := s.cfg.FrontDomain
-	if sni == "" {
-		sni = clone.URL.Hostname()
-	}
-	tr := &http.Transport{
-		Proxy: nil,
-		DialTLSContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-			dialer := &net.Dialer{
-				Timeout:   time.Duration(s.cfg.TCPConnectTimeout) * time.Second,
-				KeepAlive: 30 * time.Second,
-			}
-			raw, err := dialer.DialContext(ctx, "tcp", net.JoinHostPort(s.cfg.GoogleIP, "443"))
-			if err != nil {
-				return nil, err
-			}
-			tc := tls.Client(raw, &tls.Config{
-				ServerName: sni,
-				MinVersion: tls.VersionTLS12,
-				NextProtos: []string{"h2", "http/1.1"},
-			})
-			if err := tc.HandshakeContext(ctx); err != nil {
-				_ = raw.Close()
-				return nil, err
-			}
-			return tc, nil
-		},
-		ForceAttemptHTTP2:   true,
-		TLSHandshakeTimeout: time.Duration(s.cfg.TLSConnectTimeout) * time.Second,
-	}
-	client := &http.Client{Transport: tr, Timeout: time.Duration(s.cfg.RelayTimeout) * time.Second}
-	return client.Do(clone)
 }
 
 func (s *Server) directTunnel(target string, client net.Conn, buffered *bufio.Reader) {
