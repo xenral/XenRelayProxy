@@ -128,13 +128,11 @@ func BuildEnvelope(req *http.Request, authKey string, maxBody int64) (Envelope, 
 	if err != nil {
 		return Envelope{}, err
 	}
-	followRedirects := false
 	env := Envelope{
 		K: authKey,
 		U: req.URL.String(),
 		M: req.Method,
 		H: FlattenHeaders(req.Header),
-		R: &followRedirects,
 	}
 	if len(body) > 0 {
 		env.B = base64.StdEncoding.EncodeToString(body)
