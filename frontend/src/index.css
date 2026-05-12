@@ -1,0 +1,177 @@
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --bg-base: 240 6% 5%;
+    --bg-raised: 240 5% 8%;
+    --bg-inset: 240 5% 11%;
+    --bg-overlay: 240 5% 13%;
+    --line-subtle: 240 4% 16%;
+    --line-strong: 240 5% 22%;
+    --ink-1: 60 9% 94%;
+    --ink-2: 240 4% 65%;
+    --ink-3: 240 4% 42%;
+    --ink-inverse: 240 10% 6%;
+    --signal: 76 100% 60%;
+    --signal-dim: 76 60% 35%;
+    --signal-ink: 240 10% 6%;
+    --info: 217 91% 65%;
+    --warn: 38 92% 60%;
+    --danger: 0 84% 65%;
+    --success: 142 71% 55%;
+  }
+
+  .theme-light {
+    --bg-base: 40 12% 96%;
+    --bg-raised: 40 14% 99%;
+    --bg-inset: 40 10% 92%;
+    --bg-overlay: 0 0% 100%;
+    --line-subtle: 40 6% 86%;
+    --line-strong: 40 6% 72%;
+    --ink-1: 240 10% 8%;
+    --ink-2: 240 5% 32%;
+    --ink-3: 240 4% 50%;
+    --ink-inverse: 0 0% 100%;
+    --signal: 76 75% 38%;
+    --signal-dim: 76 50% 60%;
+    --signal-ink: 60 9% 98%;
+    --info: 217 91% 50%;
+    --warn: 38 92% 45%;
+    --danger: 0 75% 50%;
+    --success: 142 60% 38%;
+  }
+
+  * {
+    border-color: hsl(var(--line-subtle));
+  }
+
+  html,
+  body,
+  #root {
+    height: 100%;
+  }
+
+  body {
+    background: hsl(var(--bg-base));
+    color: hsl(var(--ink-1));
+    font-family: "Geist", ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings: "ss01", "cv11";
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow: hidden;
+  }
+
+  ::selection {
+    background: hsl(var(--signal) / 0.35);
+    color: hsl(var(--ink-1));
+  }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar {
+    width: 10px;
+    height: 10px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: hsl(var(--line-subtle));
+    border-radius: 8px;
+    border: 2px solid hsl(var(--bg-base));
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: hsl(var(--line-strong));
+  }
+}
+
+@layer components {
+  /* Background atmosphere — used by app shell */
+  .atmosphere {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 0;
+  }
+  .atmosphere::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: radial-gradient(
+        circle at 18% -10%,
+        hsl(var(--signal) / 0.14),
+        transparent 45%
+      ),
+      radial-gradient(circle at 92% 110%, hsl(var(--info) / 0.10), transparent 50%);
+    opacity: 1;
+  }
+  .atmosphere::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background-image: linear-gradient(
+        hsl(var(--line-subtle) / 0.35) 1px,
+        transparent 1px
+      ),
+      linear-gradient(90deg, hsl(var(--line-subtle) / 0.35) 1px, transparent 1px);
+    background-size: 48px 48px;
+    mask-image: radial-gradient(ellipse at center, black 35%, transparent 78%);
+    opacity: 0.55;
+  }
+
+  .hairline {
+    background: linear-gradient(
+      to right,
+      transparent,
+      hsl(var(--line-strong)) 12%,
+      hsl(var(--line-strong)) 88%,
+      transparent
+    );
+  }
+
+  .num {
+    font-family: "Geist Mono", "JetBrains Mono", monospace;
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: "ss01", "zero";
+  }
+
+  .display {
+    font-family: "Instrument Serif", ui-serif, Georgia, serif;
+    font-weight: 400;
+    letter-spacing: -0.025em;
+  }
+
+  .label-kicker {
+    font-family: "Geist Mono", monospace;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    color: hsl(var(--ink-3));
+  }
+
+  /* Mono ribbon used in headers */
+  .ribbon {
+    font-family: "Geist Mono", monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: hsl(var(--ink-3));
+  }
+
+  /* Reusable focus ring */
+  .focus-ring {
+    @apply outline-none ring-offset-2 ring-offset-bg-base focus-visible:ring-2 focus-visible:ring-signal/70;
+  }
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
+  }
+}
