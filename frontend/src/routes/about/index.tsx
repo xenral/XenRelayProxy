@@ -11,18 +11,18 @@ export default function AboutPage() {
 
   return (
     <div className="mx-auto max-w-4xl space-y-5 animate-fade-in">
-      <Card className="overflow-hidden p-7">
-        <div className="flex items-start gap-5">
-          <div className="relative flex h-14 w-14 shrink-0 items-center justify-center rounded-xl border border-signal/40 bg-signal/10">
-            <KeyRound className="size-6 text-signal" />
+      <Card className="overflow-hidden p-5 sm:p-6 md:p-7">
+        <div className="flex items-start gap-4 sm:gap-5">
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-signal/40 bg-signal/10 sm:h-14 sm:w-14">
+            <KeyRound className="size-5 text-signal sm:size-6" />
             <span className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full bg-signal shadow-[0_0_12px_hsl(var(--signal))]" />
           </div>
-          <div className="flex-1">
-            <div className="flex items-center gap-3">
-              <h2 className="display text-[36px] leading-none tracking-tightest text-ink-1">XenRelayProxy</h2>
+          <div className="flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+              <h2 className="display text-[26px] leading-none tracking-tightest text-ink-1 sm:text-[32px] md:text-[36px]">XenRelayProxy</h2>
               <Badge tone="signal">v{version}</Badge>
             </div>
-            <p className="mt-3 text-[14px] text-ink-2 leading-relaxed max-w-2xl">{t("about.tagline")}</p>
+            <p className="mt-3 text-[13px] text-ink-2 leading-relaxed max-w-2xl sm:text-[14px]">{t("about.tagline")}</p>
           </div>
         </div>
       </Card>
@@ -55,10 +55,10 @@ export default function AboutPage() {
         </Card>
       </div>
 
-      <Card className="p-5 flex items-center justify-between gap-4">
+      <Card className="flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between sm:gap-4 sm:p-5">
         <div>
           <span className="label-kicker">repository</span>
-          <p className="mt-1 text-[13px] text-ink-2">
+          <p className="mt-1 text-[12.5px] text-ink-2 sm:text-[13px]">
             Source on GitHub — issues, releases, full docs.
           </p>
         </div>
@@ -66,7 +66,7 @@ export default function AboutPage() {
           href="https://github.com/AlimorshedZade/MasterHttpRelayVPN"
           target="_blank"
           rel="noreferrer"
-          className="inline-flex items-center gap-2 rounded-md border border-line-strong px-3 py-1.5 text-[12.5px] text-ink-1 hover:bg-bg-inset transition-colors"
+          className="inline-flex shrink-0 items-center gap-2 rounded-full border border-line-strong px-4 py-1.5 text-[12.5px] text-ink-1 hover:bg-bg-inset transition-colors"
         >
           MasterHttpRelayVPN
           <ExternalLink className="size-3.5" />

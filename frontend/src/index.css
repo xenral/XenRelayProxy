@@ -1,4 +1,4 @@
-@import url("https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Instrument+Serif:ital@0;1&display=swap");
+@import url("https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500;600&family=Bricolage+Grotesque:opsz,wght@12..96,400;12..96,500;12..96,600;12..96,700&display=swap");
 
 @tailwind base;
 @tailwind components;
@@ -139,9 +139,11 @@
   }
 
   .display {
-    font-family: "Instrument Serif", ui-serif, Georgia, serif;
-    font-weight: 400;
-    letter-spacing: -0.025em;
+    font-family: "Bricolage Grotesque", "Geist", ui-sans-serif, system-ui, sans-serif;
+    font-weight: 600;
+    letter-spacing: -0.035em;
+    font-feature-settings: "ss01", "ss02";
+    font-variation-settings: "opsz" 32;
   }
 
   .label-kicker {

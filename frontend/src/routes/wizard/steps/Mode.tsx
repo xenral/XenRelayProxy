@@ -50,7 +50,7 @@ export function Mode() {
               type="button"
               onClick={() => setMode(id)}
               className={cn(
-                "group relative flex flex-col gap-3 rounded-lg border bg-bg-inset/50 p-5 text-left transition-all",
+                "group relative flex flex-col gap-3 rounded-xl border bg-bg-inset/50 p-5 text-left transition-all",
                 active
                   ? "border-signal/60 bg-signal/5 shadow-[0_0_0_1px_hsl(var(--signal)/0.4),0_0_30px_-8px_hsl(var(--signal)/0.4)]"
                   : "border-line-subtle hover:border-line-strong hover:bg-bg-inset",
@@ -59,7 +59,7 @@ export function Mode() {
               <div className="flex items-center gap-2.5">
                 <div
                   className={cn(
-                    "flex h-9 w-9 items-center justify-center rounded-md border transition-colors",
+                    "flex h-9 w-9 items-center justify-center rounded-full border transition-colors",
                     active
                       ? "border-signal/50 bg-signal/15 text-signal"
                       : "border-line-strong bg-bg-overlay text-ink-2 group-hover:text-ink-1",

@@ -30,12 +30,12 @@ export default function TerminalPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 animate-fade-in">
-      <Card className="p-5">
+      <Card className="p-4 sm:p-5">
         <span className="label-kicker">cli trust</span>
-        <h2 className="mt-1 text-[16px] font-medium text-ink-1">{t("term.intro.title")}</h2>
-        <p className="mt-1.5 text-[13px] text-ink-2 leading-relaxed max-w-2xl">{t("term.intro.body")}</p>
+        <h2 className="mt-1 text-[15px] font-medium text-ink-1 sm:text-[16px]">{t("term.intro.title")}</h2>
+        <p className="mt-1.5 text-[12.5px] text-ink-2 leading-relaxed max-w-2xl sm:text-[13px]">{t("term.intro.body")}</p>
 
-        <dl className="mt-5 grid gap-y-3 gap-x-6 md:grid-cols-2 text-[12.5px]">
+        <dl className="mt-4 grid gap-y-3 gap-x-6 text-[12.5px] sm:mt-5 md:grid-cols-2">
           <KV label={t("term.proxyHttp")} value={httpAddr} mono />
           <KV label={t("term.proxySocks")} value={socksAddr || t("homecert.off")} mono />
           <KV label={t("term.certPath")} value={displayPath} mono full danger={!certPath} />
@@ -43,12 +43,14 @@ export default function TerminalPage() {
       </Card>
 
       <Tabs value={tab} onValueChange={(v) => setTab(v as TermTab)}>
-        <TabsList>
-          <TabsTrigger value="macos">{t("term.tab.macos")}</TabsTrigger>
-          <TabsTrigger value="linux">{t("term.tab.linux")}</TabsTrigger>
-          <TabsTrigger value="powershell">{t("term.tab.powershell")}</TabsTrigger>
-          <TabsTrigger value="cmd">{t("term.tab.cmd")}</TabsTrigger>
-        </TabsList>
+        <div className="-mx-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <TabsList className="w-max">
+            <TabsTrigger value="macos">{t("term.tab.macos")}</TabsTrigger>
+            <TabsTrigger value="linux">{t("term.tab.linux")}</TabsTrigger>
+            <TabsTrigger value="powershell">{t("term.tab.powershell")}</TabsTrigger>
+            <TabsTrigger value="cmd">{t("term.tab.cmd")}</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="macos">
           <UnixShellGuide path={certPath} httpAddr={httpAddr} socksAddr={socksAddr} flavor="macos" />

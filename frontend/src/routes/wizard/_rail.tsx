@@ -13,20 +13,21 @@ export function StepRail({ current, furthest, onJump }: Props) {
   const t = useT();
   return (
     <aside className="w-full md:w-[220px] shrink-0">
-      <div className="label-kicker mb-4">{t("wizard.rail.title")}</div>
-      <ol className="space-y-1.5">
+      <div className="label-kicker mb-3 md:mb-4">{t("wizard.rail.title")}</div>
+      {/* Horizontal scroll strip on mobile, vertical list on md+ */}
+      <ol className="flex gap-1.5 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden md:flex-col md:gap-1.5 md:space-y-0 md:overflow-visible md:pb-0">
         {RAIL.map(({ id, labelKey, icon: Icon }, i) => {
           const visited = i <= furthest;
           const active = i === current;
           const done = i < furthest;
           return (
-            <li key={id}>
+            <li key={id} className="shrink-0 md:shrink">
               <button
                 type="button"
                 onClick={() => visited && onJump(i)}
                 disabled={!visited}
                 className={cn(
-                  "group flex w-full items-center gap-3 rounded-md px-2.5 py-2 text-left transition-colors",
+                  "group flex w-full items-center gap-2 rounded-full px-3 py-1.5 text-left transition-colors md:gap-3 md:rounded-lg md:px-2.5 md:py-2",
                   active
                     ? "bg-signal/10 text-ink-1"
                     : visited
@@ -48,11 +49,11 @@ export function StepRail({ current, furthest, onJump }: Props) {
                 </span>
                 <Icon
                   className={cn(
-                    "size-3.5 shrink-0 transition-colors",
+                    "hidden size-3.5 shrink-0 transition-colors md:inline",
                     active ? "text-signal" : done ? "text-signal/70" : "text-ink-3",
                   )}
                 />
-                <span className="flex-1 truncate text-[12.5px] font-medium tracking-tight">
+                <span className="truncate text-[12px] font-medium tracking-tight md:flex-1 md:text-[12.5px]">
                   {t(labelKey)}
                 </span>
               </button>

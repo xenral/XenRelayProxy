@@ -36,16 +36,16 @@ export default function SettingsPage() {
 
   return (
     <div className="mx-auto max-w-5xl space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <span className="label-kicker">configure</span>
-          <p className="mt-1 text-[13px] text-ink-3 max-w-2xl">
+          <p className="mt-1 text-[12.5px] text-ink-3 max-w-2xl sm:text-[13px]">
             Tune network, security, download chunking, and scheduler behavior. Changes apply on save.
           </p>
         </div>
         <div className="flex items-center gap-2">
           {isDirty && <Badge tone="warn">unsaved</Badge>}
-          <Button variant="primary" onClick={onSave} disabled={!isDirty || save.isPending}>
+          <Button variant="primary" onClick={onSave} disabled={!isDirty || save.isPending} className="flex-1 sm:flex-none">
             <Save />
             {t("settings.save")}
           </Button>
@@ -53,24 +53,26 @@ export default function SettingsPage() {
       </div>
 
       <Tabs defaultValue="network">
-        <TabsList>
-          <TabsTrigger value="network">
-            <Network />
-            Network
-          </TabsTrigger>
-          <TabsTrigger value="security">
-            <ShieldCheck />
-            Security
-          </TabsTrigger>
-          <TabsTrigger value="downloads">
-            <Download />
-            Downloads
-          </TabsTrigger>
-          <TabsTrigger value="advanced">
-            <Cpu />
-            Advanced
-          </TabsTrigger>
-        </TabsList>
+        <div className="-mx-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <TabsList className="w-max">
+            <TabsTrigger value="network">
+              <Network />
+              Network
+            </TabsTrigger>
+            <TabsTrigger value="security">
+              <ShieldCheck />
+              Security
+            </TabsTrigger>
+            <TabsTrigger value="downloads">
+              <Download />
+              Downloads
+            </TabsTrigger>
+            <TabsTrigger value="advanced">
+              <Cpu />
+              Advanced
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="network">
           <NetworkTab cfg={cfg} setCfg={setCfg} />

@@ -76,19 +76,19 @@ export default function AccountsPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-5 animate-fade-in">
-      <div className="flex items-center justify-between gap-3">
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <span className="label-kicker">{accounts.length} configured</span>
-          <p className="mt-1 text-[13px] text-ink-3">
+          <p className="mt-1 text-[12.5px] text-ink-3 sm:text-[13px]">
             Each account holds one or more Apps Script deployment IDs the scheduler rotates between.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="secondary" onClick={addAccount}>
+          <Button variant="secondary" onClick={addAccount} className="flex-1 sm:flex-none">
             <Plus />
             {t("accounts.add")}
           </Button>
-          <Button variant="primary" onClick={onSave} disabled={!isDirty || save.isPending}>
+          <Button variant="primary" onClick={onSave} disabled={!isDirty || save.isPending} className="flex-1 sm:flex-none">
             <Save />
             {t("accounts.save")}
           </Button>
@@ -135,77 +135,86 @@ function AccountRow({
   const t = useT();
   return (
     <Card className={account.enabled ? "" : "opacity-60"}>
-      <div className="grid grid-cols-[auto_1fr_1.5fr_140px_140px_auto] gap-3 items-end p-5">
-        <button
-          onClick={onToggle}
-          title={account.enabled ? t("accounts.disable") : t("accounts.enable")}
-          className={`flex h-9 w-9 items-center justify-center rounded-md border transition-colors ${
-            account.enabled
-              ? "border-signal/40 bg-signal/10 text-signal"
-              : "border-line-strong bg-bg-inset text-ink-3"
-          }`}
-        >
-          {account.enabled ? <ToggleRight className="size-4" /> : <ToggleLeft className="size-4" />}
-        </button>
-
-        <div className="space-y-1.5">
-          <Label htmlFor={`label-${account.label}`}>{t("accounts.label")}</Label>
-          <Input
-            id={`label-${account.label}`}
-            value={account.label}
-            onChange={(e) => onPatch({ label: e.target.value })}
-            placeholder={t("accounts.label")}
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label>{t("accounts.scriptId")}</Label>
-          <Input
-            value={account.script_id || account.script_ids?.[0] || ""}
-            onChange={(e) =>
-              onPatch({ script_id: e.target.value, script_ids: [e.target.value] })
-            }
-            placeholder="AKfycbz…"
-            className="font-mono text-[12px]"
-          />
-        </div>
-
-        <div className="space-y-1.5">
-          <Label>Type</Label>
-          <Select
-            value={account.account_type}
-            onValueChange={(v) => onPatch({ account_type: v })}
+      <div className="p-4 sm:p-5">
+        {/* Header row: toggle, label-pill, delete */}
+        <div className="mb-4 flex items-center justify-between gap-3">
+          <button
+            onClick={onToggle}
+            title={account.enabled ? t("accounts.disable") : t("accounts.enable")}
+            className={`flex h-9 w-9 shrink-0 items-center justify-center rounded-full border transition-colors ${
+              account.enabled
+                ? "border-signal/40 bg-signal/10 text-signal"
+                : "border-line-strong bg-bg-inset text-ink-3"
+            }`}
           >
-            <SelectTrigger>
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="consumer">{t("accounts.consumer")}</SelectItem>
-              <SelectItem value="workspace">{t("accounts.workspace")}</SelectItem>
-            </SelectContent>
-          </Select>
+            {account.enabled ? <ToggleRight className="size-4" /> : <ToggleLeft className="size-4" />}
+          </button>
+          <div className="flex min-w-0 flex-1 items-center gap-2">
+            <span className="font-mono text-[12px] uppercase tracking-[0.18em] text-ink-3">label</span>
+            <span className="truncate text-[13px] font-medium text-ink-1">{account.label || "—"}</span>
+          </div>
+          <button
+            onClick={onRemove}
+            title={t("accounts.remove")}
+            className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-danger/30 text-danger hover:bg-danger/10"
+          >
+            <Trash2 className="size-3.5" />
+          </button>
         </div>
 
-        <div className="space-y-1.5">
-          <Label>{t("accounts.dailyQuota")}</Label>
-          <Input
-            type="number"
-            value={account.daily_quota}
-            onChange={(e) => onPatch({ daily_quota: Number(e.target.value) })}
-          />
-        </div>
+        {/* Fields grid: stacks on mobile, expands on lg */}
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-[1fr_1.5fr_140px_140px]">
+          <div className="space-y-1.5">
+            <Label htmlFor={`label-${account.label}`}>{t("accounts.label")}</Label>
+            <Input
+              id={`label-${account.label}`}
+              value={account.label}
+              onChange={(e) => onPatch({ label: e.target.value })}
+              placeholder={t("accounts.label")}
+            />
+          </div>
 
-        <button
-          onClick={onRemove}
-          title={t("accounts.remove")}
-          className="flex h-9 w-9 items-center justify-center rounded-md border border-danger/30 text-danger hover:bg-danger/10"
-        >
-          <Trash2 className="size-3.5" />
-        </button>
+          <div className="space-y-1.5 sm:col-span-2 lg:col-span-1">
+            <Label>{t("accounts.scriptId")}</Label>
+            <Input
+              value={account.script_id || account.script_ids?.[0] || ""}
+              onChange={(e) =>
+                onPatch({ script_id: e.target.value, script_ids: [e.target.value] })
+              }
+              placeholder="AKfycbz…"
+              className="font-mono text-[12px]"
+            />
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Type</Label>
+            <Select
+              value={account.account_type}
+              onValueChange={(v) => onPatch({ account_type: v })}
+            >
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="consumer">{t("accounts.consumer")}</SelectItem>
+                <SelectItem value="workspace">{t("accounts.workspace")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>{t("accounts.dailyQuota")}</Label>
+            <Input
+              type="number"
+              value={account.daily_quota}
+              onChange={(e) => onPatch({ daily_quota: Number(e.target.value) })}
+            />
+          </div>
+        </div>
       </div>
 
       {account.script_ids && account.script_ids.length > 1 && (
-        <div className="border-t border-line-subtle/60 px-5 py-2.5 flex items-center gap-2">
+        <div className="border-t border-line-subtle/60 px-4 py-2.5 flex flex-wrap items-center gap-2 sm:px-5">
           <span className="label-kicker">deployments</span>
           {account.script_ids.map((id, i) => (
             <Badge key={i} tone="muted" className="font-mono normal-case tracking-normal text-[11px]">

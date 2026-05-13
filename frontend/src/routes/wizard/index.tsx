@@ -232,15 +232,15 @@ export default function WizardPage() {
       >
         <div className="atmosphere" />
 
-        <div className="relative z-10 mx-auto max-w-5xl px-6 py-10 md:py-14">
-          <div className="mb-8 flex items-end justify-between gap-6">
+        <div className="relative z-10 mx-auto max-w-5xl px-4 py-8 sm:px-6 sm:py-10 md:py-14">
+          <div className="mb-6 flex flex-col gap-4 sm:mb-8 md:flex-row md:items-end md:justify-between md:gap-6">
             <div>
               <span className="label-kicker">XenRelayProxy</span>
-              <h1 className="display mt-1 text-[28px] leading-none tracking-tightest text-ink-1">
+              <h1 className="display mt-1 text-[24px] leading-none tracking-tightest text-ink-1 sm:text-[28px]">
                 {t("wizard.welcome.title").split(" ").slice(0, 3).join(" ")}
               </h1>
             </div>
-            <div className="flex flex-1 max-w-md items-end gap-4">
+            <div className="flex w-full items-end gap-3 md:max-w-md md:gap-4">
               <div className="flex-1">
                 <div className="flex items-center justify-between text-[10.5px] font-mono uppercase tracking-[0.18em] text-ink-3">
                   <span>
@@ -258,12 +258,12 @@ export default function WizardPage() {
                 title={t("wizard.skip")}
               >
                 <SkipForward />
-                {t("wizard.skip")}
+                <span className="hidden sm:inline">{t("wizard.skip")}</span>
               </Button>
             </div>
           </div>
 
-          <div className="flex flex-col gap-8 md:flex-row">
+          <div className="flex flex-col gap-6 md:flex-row md:gap-8">
             <StepRail
               current={stepIndex}
               furthest={furthest}

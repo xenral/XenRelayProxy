@@ -120,9 +120,9 @@ export default function HomePage() {
             {downloads.map((dl) => {
               const pct = dl.total_bytes > 0 ? Math.min(100, (dl.done_bytes / dl.total_bytes) * 100) : 0;
               return (
-                <li key={dl.id} className="px-5 py-3">
-                  <div className="flex items-center gap-3 mb-1.5">
-                    <span className="flex-1 truncate text-[13px] text-ink-1" title={dl.url}>
+                <li key={dl.id} className="px-4 py-3 sm:px-5">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mb-1.5">
+                    <span className="flex-1 min-w-0 truncate text-[13px] text-ink-1" title={dl.url}>
                       {dl.filename}
                     </span>
                     <span className="font-mono text-[11.5px] tabular-nums text-ink-3">
@@ -138,7 +138,7 @@ export default function HomePage() {
                             toast.error(String(err));
                           }
                         }}
-                        className="rounded p-1 text-ink-3 hover:bg-bg-inset hover:text-ink-1"
+                        className="rounded-full p-1 text-ink-3 hover:bg-bg-inset hover:text-ink-1"
                         aria-label={t("dl.cancel")}
                       >
                         <X className="size-3" />
@@ -223,8 +223,8 @@ function QuotaCard({
         <Badge tone="muted">{strategy || "—"}</Badge>
       </div>
 
-      <div className="mt-5 flex items-center gap-5">
-        <div className="relative h-[124px] w-[124px] shrink-0">
+      <div className="mt-5 flex flex-col items-center gap-5 sm:flex-row">
+        <div className="relative h-[112px] w-[112px] shrink-0 sm:h-[124px] sm:w-[124px]">
           <svg viewBox="0 0 120 120" className="-rotate-90">
             <circle cx="60" cy="60" r="52" stroke="hsl(var(--line-subtle))" strokeWidth="6" fill="none" />
             <circle
@@ -240,13 +240,13 @@ function QuotaCard({
             />
           </svg>
           <div className="absolute inset-0 flex flex-col items-center justify-center">
-            <span className="display text-[42px] leading-none text-ink-1">{pct}</span>
+            <span className="display text-[36px] leading-none text-ink-1 sm:text-[42px]">{pct}</span>
             <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-ink-3 mt-1">
               {t("quota.usedSuffix")}
             </span>
           </div>
         </div>
-        <dl className="flex-1 space-y-2.5 text-[13px]">
+        <dl className="w-full flex-1 space-y-2.5 text-[13px]">
           <Row label={t("quota.callsToday")} value={callsToday.toLocaleString()} />
           <Row label={t("quota.dailyLimit")} value={quotaTotal.toLocaleString()} />
           <Row

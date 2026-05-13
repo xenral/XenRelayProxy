@@ -64,8 +64,8 @@ export default function LogsPage() {
 
   return (
     <div className="mx-auto max-w-6xl space-y-4 animate-fade-in flex flex-col h-full">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="relative flex-1 min-w-[220px]">
+      <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+        <div className="relative w-full flex-1 min-w-0 sm:min-w-[220px] sm:w-auto">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-ink-3" />
           <Input
             placeholder="Filter logs by message or source"
@@ -74,13 +74,13 @@ export default function LogsPage() {
             onChange={(e) => setQ(e.target.value)}
           />
         </div>
-        <div className="inline-flex rounded-md border border-line-subtle bg-bg-raised/70 p-0.5">
+        <div className="inline-flex overflow-x-auto rounded-full border border-line-subtle bg-bg-raised/70 p-0.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {LEVELS.map((lvl) => (
             <button
               key={lvl}
               onClick={() => setFilter(lvl)}
               className={cn(
-                "rounded px-2.5 py-1 font-mono text-[10.5px] uppercase tracking-[0.16em] transition-colors",
+                "shrink-0 rounded-full px-3 py-1 font-mono text-[10.5px] uppercase tracking-[0.16em] transition-colors",
                 filter === lvl
                   ? "bg-bg-inset text-ink-1 shadow-ring"
                   : "text-ink-3 hover:text-ink-1",
@@ -92,7 +92,7 @@ export default function LogsPage() {
         </div>
         <Button variant={paused ? "primary" : "secondary"} size="sm" onClick={togglePause}>
           {paused ? <Play /> : <Pause />}
-          {paused ? "Resume" : "Pause"}
+          <span className="hidden sm:inline">{paused ? "Resume" : "Pause"}</span>
         </Button>
         <Badge tone={paused ? "warn" : "signal"}>
           {paused ? "frozen" : "live"} · {filtered.length}
@@ -109,14 +109,14 @@ export default function LogsPage() {
             />
           </div>
         ) : (
-          <ul className="font-mono text-[12.5px] divide-y divide-line-subtle/40 max-h-[calc(100vh-260px)] overflow-y-auto">
+          <ul className="font-mono text-[12px] divide-y divide-line-subtle/40 max-h-[calc(100vh-260px)] overflow-y-auto sm:text-[12.5px]">
             {filtered.map((e, i) => {
               const level = e.level.toLowerCase();
               return (
                 <li
                   key={`${e.time}-${i}`}
                   className={cn(
-                    "relative grid grid-cols-[auto_56px_120px_1fr] gap-3 px-4 py-2 hover:bg-bg-inset/40 transition-colors",
+                    "relative grid grid-cols-[auto_44px_1fr] gap-2 px-3 py-2 hover:bg-bg-inset/40 transition-colors sm:grid-cols-[auto_56px_120px_1fr] sm:gap-3 sm:px-4",
                     "before:absolute before:inset-y-0 before:left-0 before:w-[2px]",
                     LEVEL_BG[level] || "before:bg-ink-3",
                   )}
@@ -124,10 +124,10 @@ export default function LogsPage() {
                   <span className="text-ink-3 tabular-nums">
                     {new Date(e.time).toLocaleTimeString([], { hour12: false })}
                   </span>
-                  <span className={cn("uppercase tracking-wider text-[10.5px] mt-[2px]", LEVEL_TONES[level] || "text-ink-3")}>
+                  <span className={cn("uppercase tracking-wider text-[10px] mt-[2px] sm:text-[10.5px]", LEVEL_TONES[level] || "text-ink-3")}>
                     {e.level}
                   </span>
-                  <span className="text-ink-3 truncate">{e.source || "—"}</span>
+                  <span className="hidden truncate text-ink-3 sm:inline">{e.source || "—"}</span>
                   <span className="text-ink-1 break-words leading-relaxed">{e.message}</span>
                 </li>
               );

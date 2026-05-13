@@ -35,7 +35,7 @@ export default {
         success: "hsl(var(--success) / <alpha-value>)",
       },
       fontFamily: {
-        display: ['"Instrument Serif"', "ui-serif", "Georgia", "serif"],
+        display: ['"Bricolage Grotesque"', '"Geist"', "ui-sans-serif", "system-ui", "sans-serif"],
         sans: ['"Geist"', "ui-sans-serif", "system-ui", "sans-serif"],
         mono: ['"Geist Mono"', '"JetBrains Mono"', "ui-monospace", "monospace"],
       },
@@ -68,6 +68,23 @@ export default {
           "70%": { boxShadow: "0 0 0 14px hsl(var(--signal) / 0)" },
           "100%": { boxShadow: "0 0 0 0 hsl(var(--signal) / 0)" },
         },
+        "connect-burst": {
+          "0%":   { transform: "scale(1)",    boxShadow: "0 0 0 0 hsl(var(--signal) / 0.85)" },
+          "40%":  { transform: "scale(1.06)" },
+          "100%": { transform: "scale(1)",    boxShadow: "0 0 0 56px hsl(var(--signal) / 0)" },
+        },
+        "spin-accel": {
+          "0%":   { transform: "rotate(0deg)",   animationTimingFunction: "cubic-bezier(0.6, 0.05, 0.95, 0.4)" },
+          "100%": { transform: "rotate(360deg)" },
+        },
+        "spin-fast": {
+          from: { transform: "rotate(0deg)" },
+          to:   { transform: "rotate(-360deg)" },
+        },
+        "spin-slow": {
+          from: { transform: "rotate(0deg)" },
+          to:   { transform: "rotate(360deg)" },
+        },
         "ticker": {
           "0%, 100%": { opacity: "1" },
           "50%": { opacity: "0.35" },
@@ -83,6 +100,10 @@ export default {
         "pulse-ring": "pulse-ring 2s ease-out infinite",
         "ticker": "ticker 1.4s ease-in-out infinite",
         "marquee": "marquee 18s linear infinite",
+        "connect-burst": "connect-burst 900ms cubic-bezier(0.2, 0.7, 0.2, 1) 1",
+        "spin-accel": "spin-accel 1.6s cubic-bezier(0.6, 0.05, 0.95, 0.4) infinite",
+        "spin-fast": "spin-fast 0.7s linear infinite",
+        "spin-slow": "spin-slow 2.4s linear infinite",
       },
     },
   },

@@ -14,13 +14,13 @@ export function SettingsCard({
   className?: string;
 }) {
   return (
-    <Card className={cn("p-6", className)}>
-      <div className="mb-5">
+    <Card className={cn("p-4 sm:p-5 md:p-6", className)}>
+      <div className="mb-4 sm:mb-5">
         {kicker && <span className="label-kicker">{kicker}</span>}
-        <h2 className="mt-1 text-[16px] font-medium tracking-tight text-ink-1">{title}</h2>
-        {description && <p className="mt-1.5 text-[12.5px] text-ink-3 max-w-xl leading-relaxed">{description}</p>}
+        <h2 className="mt-1 text-[15px] font-medium tracking-tight text-ink-1 sm:text-[16px]">{title}</h2>
+        {description && <p className="mt-1.5 text-[12px] text-ink-3 max-w-xl leading-relaxed sm:text-[12.5px]">{description}</p>}
       </div>
-      <div className="space-y-5">{children}</div>
+      <div className="space-y-4 sm:space-y-5">{children}</div>
     </Card>
   );
 }

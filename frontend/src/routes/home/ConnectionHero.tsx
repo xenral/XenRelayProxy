@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   AlertTriangle, Clock, Globe2, Loader2, Play, Server, Square, Wifi, WifiOff, Zap,
 } from "lucide-react";
@@ -18,10 +18,13 @@ interface Props {
 export function ConnectionHero({ running, connecting, activeAccount, lastError, onToggle }: Props) {
   const t = useT();
   const [uptime, setUptime] = useState(0);
+  const [burst, setBurst] = useState(false);
+  const prevRunning = useRef(running);
 
   useEffect(() => {
     if (!running) {
       setUptime(0);
+      prevRunning.current = false;
       return;
     }
     const start = Date.now();
@@ -29,12 +32,23 @@ export function ConnectionHero({ running, connecting, activeAccount, lastError, 
     return () => window.clearInterval(id);
   }, [running]);
 
+  // Fire a one-shot "burst" when the relay transitions from off/connecting → on
+  useEffect(() => {
+    if (running && !prevRunning.current) {
+      setBurst(true);
+      const id = window.setTimeout(() => setBurst(false), 900);
+      prevRunning.current = true;
+      return () => window.clearTimeout(id);
+    }
+    prevRunning.current = running;
+  }, [running]);
+
   const state = connecting ? "connecting" : running ? "on" : "off";
 
   return (
     <section
       className={cn(
-        "relative overflow-hidden rounded-2xl border border-line-subtle bg-bg-raised p-7",
+        "relative overflow-hidden rounded-2xl border border-line-subtle bg-bg-raised p-5 sm:p-6 md:p-7",
         running && "border-signal/30",
       )}
     >
@@ -60,9 +74,10 @@ export function ConnectionHero({ running, connecting, activeAccount, lastError, 
         <div className="absolute inset-0 bg-grid bg-[size:24px_24px] [mask-image:radial-gradient(ellipse_at_center,black_20%,transparent_80%)] opacity-40" />
       </div>
 
-      <div className="relative flex items-center gap-8">
+      <div className="relative flex flex-col items-stretch gap-5 sm:flex-row sm:items-center sm:gap-6 md:gap-8">
         {/* Orb */}
-        <div className="relative flex h-28 w-28 shrink-0 items-center justify-center">
+        <div className="relative mx-auto flex h-24 w-24 shrink-0 items-center justify-center sm:mx-0 sm:h-28 sm:w-28">
+          {/* Steady breathing rings while connected */}
           {state === "on" && (
             <>
               <span
@@ -75,37 +90,77 @@ export function ConnectionHero({ running, connecting, activeAccount, lastError, 
               />
             </>
           )}
+
+          {/* Spinning arcs while connecting: fast outer + slow inner = "speeding up" feel */}
+          {state === "connecting" && (
+            <>
+              <svg
+                viewBox="0 0 100 100"
+                className="absolute inset-0 h-full w-full animate-spin-fast text-warn"
+                aria-hidden
+              >
+                <circle
+                  cx="50" cy="50" r="46"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2.5"
+                  strokeLinecap="round"
+                  strokeDasharray="60 230"
+                  opacity="0.9"
+                />
+              </svg>
+              <svg
+                viewBox="0 0 100 100"
+                className="absolute inset-[6px] h-[calc(100%-12px)] w-[calc(100%-12px)] animate-spin-slow text-warn/60"
+                aria-hidden
+              >
+                <circle
+                  cx="50" cy="50" r="46"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeDasharray="30 260"
+                />
+              </svg>
+            </>
+          )}
+
           <div
             className={cn(
-              "relative flex h-24 w-24 items-center justify-center rounded-full border-2 transition-all duration-500",
+              "relative flex h-20 w-20 items-center justify-center rounded-full border-2 transition-all duration-500 sm:h-24 sm:w-24",
               state === "on" && "border-signal/60 bg-signal/15 text-signal shadow-[0_0_60px_-10px_hsl(var(--signal)/0.7)]",
-              state === "connecting" && "border-warn/60 bg-warn/10 text-warn",
+              state === "connecting" && "border-warn/40 bg-warn/10 text-warn",
               state === "off" && "border-line-strong bg-bg-inset text-ink-3",
+              burst && "animate-connect-burst",
             )}
           >
             {connecting ? (
-              <Loader2 className="size-10 animate-spin" />
+              <span className="relative flex items-center justify-center">
+                <span className="absolute h-3 w-3 rounded-full bg-warn/70 blur-[2px] animate-ticker" />
+                <Loader2 className="relative size-7 animate-spin sm:size-9" strokeWidth={2.25} />
+              </span>
             ) : running ? (
-              <Wifi className="size-10" />
+              <Wifi className="size-8 sm:size-10" />
             ) : (
-              <WifiOff className="size-10" />
+              <WifiOff className="size-8 sm:size-10" />
             )}
           </div>
         </div>
 
         {/* Text */}
-        <div className="flex-1 min-w-0">
+        <div className="flex-1 min-w-0 text-center sm:text-left">
           <div className="font-mono text-[10.5px] uppercase tracking-[0.22em] text-ink-3 mb-2">
             {running ? "tunnel" : "ready"}
           </div>
-          <h2 className="display text-[52px] leading-none tracking-tightest text-ink-1">
+          <h2 className="display text-[34px] leading-none tracking-tightest text-ink-1 sm:text-[42px] md:text-[52px]">
             {connecting
               ? t("status.connecting")
               : running
                 ? t("status.connected")
                 : t("status.disconnected")}
           </h2>
-          <p className="mt-3 flex items-center gap-2.5 text-[13.5px] text-ink-2">
+          <p className="mt-3 flex flex-wrap items-center justify-center gap-x-2 gap-y-1 text-[13px] text-ink-2 sm:justify-start sm:gap-2.5 sm:text-[13.5px]">
             {connecting && (
               <>
                 <Loader2 className="size-3 animate-spin" />
@@ -116,7 +171,7 @@ export function ConnectionHero({ running, connecting, activeAccount, lastError, 
               <>
                 <span className="font-mono text-[11px] uppercase tracking-wider text-ink-3">{t("hero.via")}</span>
                 <span className="font-mono text-ink-1">{activeAccount || "primary"}</span>
-                <span className="text-ink-3">·</span>
+                <span className="hidden text-ink-3 sm:inline">·</span>
                 <Clock className="size-3 text-ink-3" />
                 <span className="font-mono tabular-nums text-ink-1">{fmtUptime(uptime)}</span>
               </>
@@ -131,7 +186,7 @@ export function ConnectionHero({ running, connecting, activeAccount, lastError, 
           size="lg"
           disabled={connecting}
           onClick={onToggle}
-          className={cn("h-14 min-w-[164px] text-[14px]", running && "border-danger/40 text-danger hover:bg-danger/15")}
+          className={cn("h-12 w-full text-[14px] sm:h-14 sm:w-auto sm:min-w-[164px]", running && "border-danger/40 text-danger hover:bg-danger/15")}
         >
           {connecting ? <Loader2 className="animate-spin" /> : running ? <Square /> : <Play />}
           <span className="ml-1">
@@ -148,7 +203,7 @@ export function ConnectionHero({ running, connecting, activeAccount, lastError, 
       )}
 
       {running && (
-        <div className="relative mt-6 flex items-center gap-2 overflow-x-auto pb-1">
+        <div className="relative -mx-1 mt-6 flex items-center gap-2 overflow-x-auto pb-1 px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <RouteNode icon={<Globe2 />} label={t("hero.routeBrowser")} />
           <RouteArrow />
           <RouteNode icon={<Server />} label={t("hero.routeProxy")} />

@@ -55,8 +55,8 @@ export default function CertificatePage() {
   return (
     <div className="mx-auto max-w-5xl space-y-5 animate-fade-in">
       {info?.exists && (
-        <Card className="p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
+        <Card className="p-4 sm:p-5">
+          <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
             <div className="flex items-center gap-3">
               <Badge tone={trusted ? "success" : "danger"}>
                 {trusted ? (
@@ -70,19 +70,19 @@ export default function CertificatePage() {
                 {t("cert.status")}
               </span>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button variant="ghost" size="sm" onClick={() => revealCACert().catch(() => {})}>
                 <FolderOpen />
-                {t("cert.showInFinder")}
+                <span className="hidden sm:inline">{t("cert.showInFinder")}</span>
               </Button>
               <Button variant="ghost" size="sm" onClick={copyPEM}>
                 {copied ? <CheckCircle2 className="text-signal" /> : <Copy />}
-                {t("cert.copyPEM")}
+                <span className="hidden sm:inline">{t("cert.copyPEM")}</span>
               </Button>
               {trusted && (
                 <Button variant="danger" size="sm" onClick={onUninstall} disabled={uninstall.isPending}>
                   <ShieldOff />
-                  {t("cert.remove")}
+                  <span className="hidden sm:inline">{t("cert.remove")}</span>
                 </Button>
               )}
             </div>
@@ -102,16 +102,18 @@ export default function CertificatePage() {
       )}
 
       <Tabs defaultValue="auto">
-        <TabsList>
-          <TabsTrigger value="auto">
-            <ShieldCheck />
-            {t("cert.tab.auto")}
-          </TabsTrigger>
-          <TabsTrigger value="macos">{t("cert.tab.macos")}</TabsTrigger>
-          <TabsTrigger value="firefox">{t("cert.tab.firefox")}</TabsTrigger>
-          <TabsTrigger value="windows">{t("cert.tab.windows")}</TabsTrigger>
-          <TabsTrigger value="linux">{t("cert.tab.linux")}</TabsTrigger>
-        </TabsList>
+        <div className="-mx-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <TabsList className="w-max">
+            <TabsTrigger value="auto">
+              <ShieldCheck />
+              {t("cert.tab.auto")}
+            </TabsTrigger>
+            <TabsTrigger value="macos">{t("cert.tab.macos")}</TabsTrigger>
+            <TabsTrigger value="firefox">{t("cert.tab.firefox")}</TabsTrigger>
+            <TabsTrigger value="windows">{t("cert.tab.windows")}</TabsTrigger>
+            <TabsTrigger value="linux">{t("cert.tab.linux")}</TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="auto">
           <AutoGuide trusted={trusted} onInstall={onInstall} installing={install.isPending} />

@@ -35,7 +35,7 @@ function AppShell() {
       <Sidebar />
       <div className="relative z-10 flex min-w-0 flex-1 flex-col">
         <TopBar />
-        <main className="flex-1 overflow-y-auto px-7 py-7">
+        <main className="flex-1 overflow-y-auto px-4 py-5 sm:px-6 sm:py-6 md:px-7 md:py-7">
           <ErrorBoundary locale={locale}>
             <Suspense fallback={<RouteFallback />}>
               <Outlet />

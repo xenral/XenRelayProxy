@@ -101,11 +101,11 @@ export function AppsScriptAccount() {
 
         <div>
           <Label>{t("wizard.account.scriptIds")}</Label>
-          <div className="mt-2 flex min-h-9 flex-wrap items-center gap-1.5 rounded-md border border-line-strong bg-bg-inset px-2 py-1.5 focus-within:ring-2 focus-within:ring-signal/55 focus-within:border-signal/60">
+          <div className="mt-2 flex min-h-9 flex-wrap items-center gap-1.5 rounded-lg border border-line-strong bg-bg-inset px-2.5 py-1.5 focus-within:ring-2 focus-within:ring-signal/55 focus-within:border-signal/60">
             {scriptIDs.map((s) => (
               <span
                 key={s}
-                className="inline-flex items-center gap-1 rounded border border-line-subtle bg-bg-overlay px-1.5 py-0.5 font-mono text-[11.5px] text-ink-1"
+                className="inline-flex items-center gap-1 rounded-full border border-line-subtle bg-bg-overlay px-2 py-0.5 font-mono text-[11.5px] text-ink-1"
               >
                 {s.length > 24 ? s.slice(0, 18) + "…" + s.slice(-4) : s}
                 <button

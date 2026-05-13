@@ -33,7 +33,7 @@ export function CopyCode({ code, label, className, language }: CopyCodeProps) {
           <button
             type="button"
             onClick={copy}
-            className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-[11px] text-ink-2 hover:text-ink-1 hover:bg-bg-overlay transition-colors"
+            className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] text-ink-2 hover:text-ink-1 hover:bg-bg-overlay transition-colors"
           >
             {copied ? <Check className="size-3 text-signal" /> : <Copy className="size-3" />}
             <span className="font-mono uppercase tracking-wider">
@@ -49,7 +49,7 @@ export function CopyCode({ code, label, className, language }: CopyCodeProps) {
         <button
           type="button"
           onClick={copy}
-          className="absolute right-2 top-2 inline-flex items-center gap-1.5 rounded-md border border-line-subtle bg-bg-overlay px-2 py-1 text-[11px] text-ink-2 opacity-0 transition-opacity group-hover:opacity-100 hover:text-ink-1"
+          className="absolute right-2 top-2 inline-flex items-center gap-1.5 rounded-full border border-line-subtle bg-bg-overlay px-2 py-1 text-[11px] text-ink-2 opacity-0 transition-opacity group-hover:opacity-100 hover:text-ink-1"
         >
           {copied ? <Check className="size-3 text-signal" /> : <Copy className="size-3" />}
         </button>
