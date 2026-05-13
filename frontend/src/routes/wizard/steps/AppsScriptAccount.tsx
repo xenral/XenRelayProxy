@@ -20,11 +20,11 @@ export function AppsScriptAccount() {
     accLabel, setAccLabel,
     accEmail, setAccEmail,
     scriptIDs, setScriptIDs,
+    scriptDraft, setScriptDraft,
     dailyQuota, setDailyQuota,
     googleIP, setGoogleIP,
   } = useWizard();
 
-  const [chipDraft, setChipDraft] = useState("");
   const [code, setCode] = useState("");
   const [scanning, setScanning] = useState(false);
   const [scanResults, setScanResults] = useState<ScanResult[]>([]);
@@ -37,11 +37,11 @@ export function AppsScriptAccount() {
   }, []);
 
   function addChip() {
-    const v = chipDraft.trim();
+    const v = scriptDraft.trim();
     if (!v) return;
-    if (scriptIDs.includes(v)) { setChipDraft(""); return; }
+    if (scriptIDs.includes(v)) { setScriptDraft(""); return; }
     setScriptIDs([...scriptIDs, v]);
-    setChipDraft("");
+    setScriptDraft("");
   }
 
   function removeChip(s: string) {
@@ -120,15 +120,16 @@ export function AppsScriptAccount() {
             ))}
             <input
               className="flex-1 min-w-[140px] bg-transparent text-[12.5px] text-ink-1 placeholder:text-ink-3 font-mono outline-none"
-              value={chipDraft}
-              onChange={(e) => setChipDraft(e.target.value)}
+              value={scriptDraft}
+              onChange={(e) => setScriptDraft(e.target.value)}
               onKeyDown={(e) => {
                 if (e.key === "Enter" || e.key === ",") {
                   e.preventDefault(); addChip();
-                } else if (e.key === "Backspace" && !chipDraft && scriptIDs.length > 0) {
+                } else if (e.key === "Backspace" && !scriptDraft && scriptIDs.length > 0) {
                   setScriptIDs(scriptIDs.slice(0, -1));
                 }
               }}
+              onBlur={addChip}
               placeholder={t("wizard.account.scriptIdsPlaceholder")}
               spellCheck={false}
             />

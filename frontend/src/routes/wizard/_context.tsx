@@ -23,6 +23,12 @@ export interface WizardState {
   scriptIDs: string[];
   setScriptIDs: (a: string[]) => void;
 
+  // Uncommitted text in the deployment-ID chip input. Lifted to the wizard so
+  // `next()` can commit it even when the user clicks the button without first
+  // pressing Enter.
+  scriptDraft: string;
+  setScriptDraft: (s: string) => void;
+
   vercelURL: string;
   setVercelURL: (s: string) => void;
 

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { AlertTriangle, ArrowLeft, ArrowRight, X } from "lucide-react";
+import { AlertTriangle, ArrowLeft, ArrowRight, SkipForward, X } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 import { useT } from "@/i18n";
 import { useUI } from "@/stores/ui";
 import { Button } from "@/components/ui/button";
@@ -8,6 +9,7 @@ import { Progress } from "@/components/ui/progress";
 import {
   generateAuthKey, getConfig, markSetupCompleted, saveConfig, startRelay,
 } from "@/lib/api";
+import { QK } from "@/lib/queries";
 import type { Account, Config } from "@/types/domain";
 import { BLANK_CONFIG } from "@/types/domain";
 
@@ -27,6 +29,7 @@ export default function WizardPage() {
   const t = useT();
   const locale = useUI((s) => s.locale);
   const navigate = useNavigate();
+  const qc = useQueryClient();
 
   const [step, setStep] = useState<WizardStep>("welcome");
   const [furthest, setFurthest] = useState(0);
@@ -38,10 +41,12 @@ export default function WizardPage() {
   const [accLabel, setAccLabel] = useState("default");
   const [accEmail, setAccEmail] = useState("");
   const [scriptIDs, setScriptIDs] = useState<string[]>([]);
+  const [scriptDraft, setScriptDraft] = useState("");
   const [vercelURL, setVercelURL] = useState("");
   const [dailyQuota, setDailyQuota] = useState(20000);
 
   const [savingErr, setSavingErr] = useState<string | null>(null);
+  const [skipping, setSkipping] = useState(false);
 
   // Hydrate from existing config on mount
   useEffect(() => {
@@ -86,6 +91,14 @@ export default function WizardPage() {
     if (i > furthest) setFurthest(i);
   }
 
+  // Treat any non-empty chipDraft as a deployment ID the user typed but
+  // never committed with Enter — we still want to save it.
+  function effectiveScriptIDs(): string[] {
+    const d = scriptDraft.trim();
+    if (!d) return scriptIDs;
+    return scriptIDs.includes(d) ? scriptIDs : [...scriptIDs, d];
+  }
+
   async function persistDraft(extra: Partial<Config> = {}) {
     setSavingErr(null);
     try {
@@ -104,9 +117,16 @@ export default function WizardPage() {
         const prev = (cfg.accounts || []).find((a) => a.label === (accLabel || "default"));
         if (prev?.script_ids?.length) accountBase.script_ids = prev.script_ids;
       } else {
-        accountBase.script_ids = scriptIDs;
+        const ids = effectiveScriptIDs();
+        accountBase.script_ids = ids;
         accountBase.provider = "";
         accountBase.vercel_url = "";
+        // Keep `scriptIDs` in sync with what we just persisted so the Done
+        // summary and Settings page reflect the same value.
+        if (ids.length !== scriptIDs.length) {
+          setScriptIDs(ids);
+          setScriptDraft("");
+        }
       }
       const merged: Config = {
         ...(BLANK_CONFIG as Config),
@@ -124,6 +144,11 @@ export default function WizardPage() {
         ...extra,
       };
       await saveConfig(merged);
+      // Re-entering the wizard from the sidebar means useConfig has already
+      // cached a Config under QK.config with staleTime: Infinity. Without
+      // this, Settings / Accounts keep showing pre-wizard values.
+      qc.setQueryData(QK.config, merged);
+      qc.invalidateQueries({ queryKey: QK.config });
     } catch (err: unknown) {
       setSavingErr(err instanceof Error ? err.message : String(err));
     }
@@ -154,7 +179,7 @@ export default function WizardPage() {
           setSavingErr(t("wizard.vercel.urlScheme"));
           return;
         }
-      } else if (scriptIDs.length === 0) {
+      } else if (effectiveScriptIDs().length === 0) {
         setSavingErr(t("wizard.account.scriptIdsRequired"));
         return;
       }
@@ -172,10 +197,11 @@ export default function WizardPage() {
       accLabel, setAccLabel,
       accEmail, setAccEmail,
       scriptIDs, setScriptIDs,
+      scriptDraft, setScriptDraft,
       vercelURL, setVercelURL,
       dailyQuota, setDailyQuota,
     }),
-    [mode, authKey, frontDomain, googleIP, accLabel, accEmail, scriptIDs, vercelURL, dailyQuota],
+    [mode, authKey, frontDomain, googleIP, accLabel, accEmail, scriptIDs, scriptDraft, vercelURL, dailyQuota],
   );
 
   async function finish() {
@@ -185,11 +211,24 @@ export default function WizardPage() {
     navigate("/", { replace: true });
   }
 
+  async function skipWizard() {
+    setSkipping(true);
+    try {
+      await markSetupCompleted();
+      qc.invalidateQueries({ queryKey: QK.config });
+      navigate("/", { replace: true });
+    } catch (err: unknown) {
+      setSavingErr(err instanceof Error ? err.message : String(err));
+    } finally {
+      setSkipping(false);
+    }
+  }
+
   return (
     <WizardCtx.Provider value={ctxValue}>
       <div
         dir={locale === "fa" ? "rtl" : "ltr"}
-        className="relative min-h-screen overflow-y-auto bg-bg-base"
+        className="relative h-screen overflow-y-auto bg-bg-base"
       >
         <div className="atmosphere" />
 
@@ -201,14 +240,26 @@ export default function WizardPage() {
                 {t("wizard.welcome.title").split(" ").slice(0, 3).join(" ")}
               </h1>
             </div>
-            <div className="flex-1 max-w-xs">
-              <div className="flex items-center justify-between text-[10.5px] font-mono uppercase tracking-[0.18em] text-ink-3">
-                <span>
-                  {String(stepIndex + 1).padStart(2, "0")} / {String(ORDER.length).padStart(2, "0")}
-                </span>
-                <span>{Math.round(progressPct)}%</span>
+            <div className="flex flex-1 max-w-md items-end gap-4">
+              <div className="flex-1">
+                <div className="flex items-center justify-between text-[10.5px] font-mono uppercase tracking-[0.18em] text-ink-3">
+                  <span>
+                    {String(stepIndex + 1).padStart(2, "0")} / {String(ORDER.length).padStart(2, "0")}
+                  </span>
+                  <span>{Math.round(progressPct)}%</span>
+                </div>
+                <Progress value={progressPct} className="mt-2" />
               </div>
-              <Progress value={progressPct} className="mt-2" />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={skipWizard}
+                disabled={skipping}
+                title={t("wizard.skip")}
+              >
+                <SkipForward />
+                {t("wizard.skip")}
+              </Button>
             </div>
           </div>
 
