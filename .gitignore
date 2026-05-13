@@ -8,4 +8,6 @@ state/
 config.json
 *.tmp
 .DS_Store
+.claude/
+.vscode/
 
