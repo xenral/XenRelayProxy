@@ -7,12 +7,20 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"xenrelayproxy/internal/config"
 )
 
 var ErrNoAccountAvailable = errors.New("no relay account available")
+
+// DefaultAccountMaxInFlight caps concurrent in-flight requests per account
+// when scheduler.account_max_in_flight is unset. Apps Script has an
+// undocumented ~30 concurrent execution cap per *script project* shared
+// across all of its deployments, so 20 leaves headroom for keepalives,
+// fan-out arms that haven't been cancelled yet, and bursty re-tries.
+const DefaultAccountMaxInFlight = 20
 
 type Account struct {
 	Label             string    `json:"label"`
@@ -34,9 +42,21 @@ type Account struct {
 	TotalCalls        int       `json:"total_calls"`
 	TotalErrors       int       `json:"total_errors"`
 
+	// inFlight tracks how many requests this account currently has in
+	// flight against Apps Script. Mutated via atomic ops from any goroutine
+	// (Scheduler.Select increments; Scheduler.Release decrements) so the
+	// hot path doesn't need the scheduler mutex. Raw int64 instead of
+	// atomic.Int64 keeps the struct copyable (cloneAccount uses *a copy);
+	// reads go through atomic.LoadInt64 to stay race-free.
+	inFlight int64
+
 	throttleTimestamps []time.Time
 	sidIndex           int
 }
+
+// InFlight returns the current number of in-flight requests against this
+// account. Safe to call concurrently.
+func (a *Account) InFlight() int64 { return atomic.LoadInt64(&a.inFlight) }
 
 type Scheduler struct {
 	mu                sync.Mutex
@@ -49,6 +69,8 @@ type Scheduler struct {
 	persistInterval   time.Duration
 	keepaliveInterval time.Duration
 	prewarmOnStart    bool
+	fanoutMax         int
+	maxInFlight       int
 	roundRobinIndex   int
 	stopPersist       chan struct{}
 	persistStopped    chan struct{}
@@ -76,10 +98,17 @@ type AccountStats struct {
 	TotalCalls              int     `json:"total_calls"`
 	TotalErrors             int     `json:"total_errors"`
 	Weight                  float64 `json:"weight"`
+	InFlight                int64   `json:"in_flight"`
+	MaxInFlight             int     `json:"max_in_flight"`
 }
 
 func New(accounts []config.Account, cfg config.Scheduler) *Scheduler {
 	now := time.Now()
+	fanoutMax := max(cfg.FanoutMax, 1)
+	maxInFlight := cfg.AccountMaxInFlight
+	if maxInFlight <= 0 {
+		maxInFlight = DefaultAccountMaxInFlight
+	}
 	s := &Scheduler{
 		strategy:          cfg.Strategy,
 		cooloff:           time.Duration(cfg.CooloffSeconds) * time.Second,
@@ -89,6 +118,8 @@ func New(accounts []config.Account, cfg config.Scheduler) *Scheduler {
 		persistInterval:   time.Duration(cfg.StatePersistIntervalSeconds) * time.Second,
 		keepaliveInterval: time.Duration(cfg.KeepaliveIntervalSeconds) * time.Second,
 		prewarmOnStart:    cfg.PrewarmOnStart,
+		fanoutMax:         fanoutMax,
+		maxInFlight:       maxInFlight,
 		stopPersist:       make(chan struct{}),
 		persistStopped:    make(chan struct{}),
 		random:            rand.New(rand.NewSource(now.UnixNano())),
@@ -128,11 +159,26 @@ func (s *Scheduler) KeepaliveInterval() time.Duration { return s.keepaliveInterv
 func (s *Scheduler) PrewarmOnStart() bool             { return s.prewarmOnStart }
 
 func (s *Scheduler) Select() (*Account, error) {
+	return s.SelectExcluding(nil)
+}
+
+// SelectExcluding picks an account whose label is not in `excluded`,
+// applying the same eligibility filters as Select. Used by the relay
+// retry path to avoid re-picking an account that just failed within the
+// same client request. Returns ErrNoAccountAvailable when every eligible
+// account is either over its in-flight cap or in the excluded set.
+//
+// On success the returned (cloned) account has had its real underlying
+// InFlight counter incremented by 1; the caller MUST call Release with
+// the returned account when the request completes, exactly once.
+func (s *Scheduler) SelectExcluding(excluded []string) (*Account, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	now := time.Now()
 	s.rollWindowsLocked(now)
+	maxIF := int64(s.maxInFlight)
 	var candidates []*Account
+nextAccount:
 	for _, a := range s.accounts {
 		if !a.Enabled || a.CooloffUntil.After(now) {
 			continue
@@ -140,19 +186,48 @@ func (s *Scheduler) Select() (*Account, error) {
 		if float64(a.CallsToday) >= float64(a.DailyQuota)*s.quotaSafetyMargin {
 			continue
 		}
+		if atomic.LoadInt64(&a.inFlight) >= maxIF {
+			continue
+		}
+		for _, ex := range excluded {
+			if a.Label == ex {
+				continue nextAccount
+			}
+		}
 		candidates = append(candidates, a)
 	}
 	if len(candidates) == 0 {
 		return nil, ErrNoAccountAvailable
 	}
+	var picked *Account
 	switch s.strategy {
 	case "round_robin":
-		return s.selectRoundRobinLocked(candidates), nil
+		picked = s.selectRoundRobinLocked(candidates)
 	case "weighted_random":
-		return s.selectWeightedRandomLocked(candidates), nil
+		picked = s.selectWeightedRandomLocked(candidates)
 	default:
-		return selectLeastLoaded(candidates), nil
+		picked = selectLeastLoaded(candidates, maxIF)
 	}
+	atomic.AddInt64(&picked.inFlight, 1)
+	return cloneLeasedAccountFanout(picked, s.fanoutMax), nil
+}
+
+// Release decrements the in-flight counter for the account behind a
+// leased clone returned by Select / SelectExcluding. Safe to call from
+// any goroutine; idempotent only in the sense that calling it more
+// times than Select would drive the counter below zero, so callers
+// must defer it exactly once per successful Select.
+func (s *Scheduler) Release(account *Account) {
+	if account == nil {
+		return
+	}
+	s.mu.Lock()
+	a := s.findLocked(account.Label)
+	s.mu.Unlock()
+	if a == nil {
+		return
+	}
+	atomic.AddInt64(&a.inFlight, -1)
 }
 
 func (s *Scheduler) AllAccounts() []*Account {
@@ -295,6 +370,8 @@ func (s *Scheduler) Stats() Stats {
 			TotalCalls:              a.TotalCalls,
 			TotalErrors:             a.TotalErrors,
 			Weight:                  a.Weight,
+			InFlight:                atomic.LoadInt64(&a.inFlight),
+			MaxInFlight:             s.maxInFlight,
 		})
 	}
 	return stats
@@ -310,6 +387,26 @@ func (a *Account) NextScriptID() string {
 	sid := a.ScriptIDs[a.sidIndex%len(a.ScriptIDs)]
 	a.sidIndex++
 	return sid
+}
+
+// PickScriptIDs returns up to n script IDs starting at the current
+// round-robin offset and advances sidIndex by n. The returned slice
+// has no duplicates as long as n <= len(a.ScriptIDs); if n is larger
+// the IDs wrap. Must be called under the scheduler mutex (because it
+// mutates a.sidIndex on the live, non-cloned account).
+func (a *Account) PickScriptIDs(n int) []string {
+	if len(a.ScriptIDs) == 0 || n <= 0 {
+		return nil
+	}
+	if n > len(a.ScriptIDs) {
+		n = len(a.ScriptIDs)
+	}
+	out := make([]string, n)
+	for i := 0; i < n; i++ {
+		out[i] = a.ScriptIDs[(a.sidIndex+i)%len(a.ScriptIDs)]
+	}
+	a.sidIndex += n
+	return out
 }
 
 func (a *Account) UsageRatio() float64 {
@@ -424,7 +521,7 @@ func (s *Scheduler) persistLoop() {
 func (s *Scheduler) selectRoundRobinLocked(candidates []*Account) *Account {
 	a := candidates[s.roundRobinIndex%len(candidates)]
 	s.roundRobinIndex++
-	return cloneLeasedAccount(a)
+	return a
 }
 
 func (s *Scheduler) selectWeightedRandomLocked(candidates []*Account) *Account {
@@ -436,28 +533,41 @@ func (s *Scheduler) selectWeightedRandomLocked(candidates []*Account) *Account {
 	for _, a := range candidates {
 		pick -= a.Weight
 		if pick <= 0 {
-			return cloneLeasedAccount(a)
+			return a
 		}
 	}
-	return cloneLeasedAccount(candidates[len(candidates)-1])
+	return candidates[len(candidates)-1]
 }
 
-func selectLeastLoaded(candidates []*Account) *Account {
+// selectLeastLoaded scores candidates by combined load = in-flight share
+// + daily-quota share. Lower wins. Both terms are normalized to [0,1] so
+// a half-full quota and a half-full in-flight slot count the same. The
+// in-flight term is what spreads bursts across accounts in real time;
+// the usage term is what spreads the daily budget over the 24h window.
+// Ties broken by weight (higher first) then most recently successful.
+func selectLeastLoaded(candidates []*Account, maxInFlight int64) *Account {
+	score := func(a *Account) float64 {
+		usage := a.UsageRatio()
+		var inflight float64
+		if maxInFlight > 0 {
+			inflight = float64(atomic.LoadInt64(&a.inFlight)) / float64(maxInFlight)
+		}
+		return usage + inflight
+	}
 	best := candidates[0]
+	bestScore := score(best)
 	for _, a := range candidates[1:] {
-		if a.UsageRatio() < best.UsageRatio() {
-			best = a
-			continue
-		}
-		if a.UsageRatio() == best.UsageRatio() && a.Weight > best.Weight {
-			best = a
-			continue
-		}
-		if a.UsageRatio() == best.UsageRatio() && a.Weight == best.Weight && a.LastSuccessAt.After(best.LastSuccessAt) {
-			best = a
+		s := score(a)
+		switch {
+		case s < bestScore:
+			best, bestScore = a, s
+		case s == bestScore && a.Weight > best.Weight:
+			best, bestScore = a, s
+		case s == bestScore && a.Weight == best.Weight && a.LastSuccessAt.After(best.LastSuccessAt):
+			best, bestScore = a, s
 		}
 	}
-	return cloneLeasedAccount(best)
+	return best
 }
 
 func (s *Scheduler) findLocked(label string) *Account {
@@ -494,6 +604,23 @@ func cloneLeasedAccount(a *Account) *Account {
 	cp := cloneAccount(a)
 	if sid != "" {
 		cp.ScriptIDs = []string{sid}
+	}
+	return cp
+}
+
+// cloneLeasedAccountFanout returns a clone whose ScriptIDs slice holds
+// up to n IDs starting at the account's current round-robin offset.
+// n <= 1 collapses to single-ID (same as cloneLeasedAccount). Used by
+// Select() so the provider can race multiple deployments without the
+// scheduler having to know about HTTP transport details.
+func cloneLeasedAccountFanout(a *Account, n int) *Account {
+	if n <= 1 {
+		return cloneLeasedAccount(a)
+	}
+	sids := a.PickScriptIDs(n)
+	cp := cloneAccount(a)
+	if len(sids) > 0 {
+		cp.ScriptIDs = sids
 	}
 	return cp
 }

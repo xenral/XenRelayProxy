@@ -36,7 +36,7 @@ export function ConnectionHero({ running, connecting, activeAccount, lastError, 
   useEffect(() => {
     if (running && !prevRunning.current) {
       setBurst(true);
-      const id = window.setTimeout(() => setBurst(false), 900);
+      const id = window.setTimeout(() => setBurst(false), 1400);
       prevRunning.current = true;
       return () => window.clearTimeout(id);
     }
@@ -77,16 +77,17 @@ export function ConnectionHero({ running, connecting, activeAccount, lastError, 
       <div className="relative flex flex-col items-stretch gap-5 sm:flex-row sm:items-center sm:gap-6 md:gap-8">
         {/* Orb */}
         <div className="relative mx-auto flex h-24 w-24 shrink-0 items-center justify-center sm:mx-0 sm:h-28 sm:w-28">
-          {/* Steady breathing rings while connected */}
-          {state === "on" && (
+          {/* One-shot ring on the connecting → connected transition */}
+          {state === "on" && burst && (
             <>
               <span
-                className="absolute inset-0 rounded-full animate-pulse-ring"
-                style={{ animationDuration: "2.6s" }}
+                className="absolute inset-0 rounded-full animate-connect-pulse-once"
+                aria-hidden
               />
               <span
-                className="absolute inset-0 rounded-full animate-pulse-ring"
-                style={{ animationDuration: "2.6s", animationDelay: "1.3s" }}
+                className="absolute inset-0 rounded-full animate-connect-pulse-once"
+                style={{ animationDelay: "260ms" }}
+                aria-hidden
               />
             </>
           )}
@@ -136,9 +137,22 @@ export function ConnectionHero({ running, connecting, activeAccount, lastError, 
             )}
           >
             {connecting ? (
-              <span className="relative flex items-center justify-center">
-                <span className="absolute h-3 w-3 rounded-full bg-warn/70 blur-[2px] animate-ticker" />
-                <Loader2 className="relative size-7 animate-spin sm:size-9" strokeWidth={2.25} />
+              <span className="relative flex h-10 w-10 items-center justify-center" aria-label={t("status.connecting")}>
+                {/* Radial orb-like ring pulses emanating from the dot */}
+                <span
+                  className="absolute h-2.5 w-2.5 rounded-full animate-orb-pulse"
+                  aria-hidden
+                />
+                <span
+                  className="absolute h-2.5 w-2.5 rounded-full animate-orb-pulse"
+                  style={{ animationDelay: "900ms" }}
+                  aria-hidden
+                />
+                {/* Center breathing dot */}
+                <span
+                  className="relative h-2.5 w-2.5 rounded-full bg-warn shadow-[0_0_18px_3px_hsl(var(--warn)/0.75)] animate-orb-dot"
+                  aria-hidden
+                />
               </span>
             ) : running ? (
               <Wifi className="size-8 sm:size-10" />

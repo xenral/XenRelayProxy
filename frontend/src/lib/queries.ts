@@ -50,7 +50,14 @@ export function useCACertInfo() {
 export function useStartRelay() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: api.startRelay,
+    // Refetch status inside the mutationFn so `isPending` stays true until the
+    // backend's running=true is in the cache. Otherwise the hero briefly shows
+    // the disconnected/off state between the mutation resolving and the next
+    // status poll, which kills the connecting animation.
+    mutationFn: async () => {
+      await api.startRelay();
+      await qc.refetchQueries({ queryKey: QK.status });
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.stats }),
   });
 }
@@ -58,7 +65,10 @@ export function useStartRelay() {
 export function useStopRelay() {
   const qc = useQueryClient();
   return useMutation({
-    mutationFn: api.stopRelay,
+    mutationFn: async () => {
+      await api.stopRelay();
+      await qc.refetchQueries({ queryKey: QK.status });
+    },
     onSuccess: () => qc.invalidateQueries({ queryKey: QK.stats }),
   });
 }

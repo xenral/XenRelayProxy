@@ -1,4 +1,4 @@
-import { ArrowRight, KeyRound, Rocket, ShieldCheck, Sparkles, Wand2 } from "lucide-react";
+import { ArrowRight, KeyRound, Rocket, ShieldCheck, Wand2 } from "lucide-react";
 import { useT, type Locale } from "@/i18n";
 import { useUI } from "@/stores/ui";
 import { Button } from "@/components/ui/button";
@@ -20,8 +20,13 @@ export function Welcome({ onNext }: { onNext: () => void }) {
   return (
     <Card className="overflow-hidden p-5 sm:p-7 md:p-9">
       <div className="flex justify-center">
-        <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl border border-signal/40 bg-signal/10 shadow-[0_0_40px_-8px_hsl(var(--signal)/0.5)] sm:h-16 sm:w-16">
-          <Sparkles className="size-6 text-signal sm:size-7" />
+        <div className="relative flex h-14 w-14 items-center justify-center overflow-hidden rounded-2xl border border-signal/40 bg-bg-inset shadow-[0_0_40px_-8px_hsl(var(--signal)/0.5)] sm:h-16 sm:w-16">
+          <img
+            src="/logo.png"
+            alt="XenRelayProxy"
+            className="h-full w-full object-cover"
+            draggable={false}
+          />
           <span className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full bg-signal shadow-[0_0_12px_hsl(var(--signal))] animate-pulse-ring" />
         </div>
       </div>
