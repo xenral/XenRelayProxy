@@ -27,7 +27,7 @@ export function Welcome({ onNext }: { onNext: () => void }) {
             className="h-full w-full object-cover"
             draggable={false}
           />
-          <span className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full bg-signal shadow-[0_0_12px_hsl(var(--signal))] animate-pulse-ring" />
+          <span className="absolute -bottom-1 -right-1 h-3.5 w-3.5 rounded-full bg-signal shadow-[0_0_12px_hsl(var(--signal))]" />
         </div>
       </div>
 

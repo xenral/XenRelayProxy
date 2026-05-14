@@ -27,10 +27,7 @@ export function StatusPill({ state, address, className }: Props) {
     >
       <span className="relative flex h-2 w-2 items-center justify-center">
         {state === "connected" && (
-          <>
-            <span className="absolute inline-flex h-full w-full animate-pulse-ring rounded-full bg-signal" />
-            <span className="relative inline-flex h-2 w-2 rounded-full bg-signal" />
-          </>
+          <span className="inline-flex h-2 w-2 rounded-full bg-signal shadow-[0_0_8px_hsl(var(--signal)/0.85)]" />
         )}
         {state === "connecting" && (
           <Loader2 className="size-3 animate-spin text-warn" />

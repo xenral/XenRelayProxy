@@ -63,11 +63,6 @@ export default {
           from: { opacity: "0", transform: "translateY(8px)" },
           to: { opacity: "1", transform: "translateY(0)" },
         },
-        "pulse-ring": {
-          "0%": { boxShadow: "0 0 0 0 hsl(var(--signal) / 0.55)" },
-          "70%": { boxShadow: "0 0 0 14px hsl(var(--signal) / 0)" },
-          "100%": { boxShadow: "0 0 0 0 hsl(var(--signal) / 0)" },
-        },
         "connect-burst": {
           "0%":   { transform: "scale(1)",    boxShadow: "0 0 0 0 hsl(var(--signal) / 0.85)" },
           "35%":  { transform: "scale(1.07)" },
@@ -87,10 +82,6 @@ export default {
           "0%, 100%": { transform: "scale(1)",    opacity: "0.95" },
           "50%":      { transform: "scale(1.18)", opacity: "1" },
         },
-        "spin-accel": {
-          "0%":   { transform: "rotate(0deg)",   animationTimingFunction: "cubic-bezier(0.6, 0.05, 0.95, 0.4)" },
-          "100%": { transform: "rotate(360deg)" },
-        },
         "spin-fast": {
           from: { transform: "rotate(0deg)" },
           to:   { transform: "rotate(-360deg)" },
@@ -99,26 +90,14 @@ export default {
           from: { transform: "rotate(0deg)" },
           to:   { transform: "rotate(360deg)" },
         },
-        "ticker": {
-          "0%, 100%": { opacity: "1" },
-          "50%": { opacity: "0.35" },
-        },
-        "marquee": {
-          from: { transform: "translateX(0)" },
-          to: { transform: "translateX(-50%)" },
-        },
       },
       animation: {
         "fade-in": "fade-in 200ms ease-out both",
         "slide-up": "slide-up 320ms cubic-bezier(0.2, 0.7, 0.2, 1) both",
-        "pulse-ring": "pulse-ring 2s ease-out infinite",
-        "ticker": "ticker 1.4s ease-in-out infinite",
-        "marquee": "marquee 18s linear infinite",
         "connect-burst": "connect-burst 1200ms cubic-bezier(0.22, 1, 0.36, 1) 1",
         "connect-pulse-once": "connect-pulse-once 1400ms cubic-bezier(0.22, 1, 0.36, 1) 1 forwards",
         "orb-pulse": "orb-pulse 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite",
         "orb-dot": "orb-dot 1.4s ease-in-out infinite",
-        "spin-accel": "spin-accel 1.6s cubic-bezier(0.6, 0.05, 0.95, 0.4) infinite",
         "spin-fast": "spin-fast 0.7s linear infinite",
         "spin-slow": "spin-slow 2.4s linear infinite",
       },
