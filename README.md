@@ -1,6 +1,11 @@
 # XenRelayProxy
 
 [![GitHub](https://img.shields.io/badge/GitHub-XenRelayProxy-blue?logo=github)](https://github.com/xenral/XenRelayProxy)
+[![Latest release](https://img.shields.io/github/v/release/xenral/XenRelayProxy?logo=github&label=release)](https://github.com/xenral/XenRelayProxy/releases/latest)
+[![Release date](https://img.shields.io/github/release-date/xenral/XenRelayProxy?logo=github)](https://github.com/xenral/XenRelayProxy/releases/latest)
+[![Downloads (latest)](https://img.shields.io/github/downloads/xenral/XenRelayProxy/latest/total?logo=github&label=downloads%20%28latest%29)](https://github.com/xenral/XenRelayProxy/releases/latest)
+[![Downloads (total)](https://img.shields.io/github/downloads/xenral/XenRelayProxy/total?logo=github&label=downloads%20%28total%29)](https://github.com/xenral/XenRelayProxy/releases)
+[![License](https://img.shields.io/github/license/xenral/XenRelayProxy)](./LICENSE)
 
 A Go/Wails desktop rewrite of [MasterHttpRelayVPN](https://github.com/masterking32/MasterHttpRelayVPN). It runs a local HTTP/SOCKS5 proxy that hides your traffic behind trusted Google domains and relays HTTPS requests through a free Google Apps Script deployment. No VPS, no server — just a free Google account.
 
@@ -28,7 +33,7 @@ A Go/Wails desktop rewrite of [MasterHttpRelayVPN](https://github.com/masterking
 
 Apps Script is free but limited: 20 MB per call, ~6-minute ceiling, daily quota. **Vercel mode** routes the same traffic through a Node.js function you deploy in 30 seconds:
 
-[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2FAlimorshedZade%2FXenRelayProxy&root-directory=vercel&env=RELAY_TOKEN)
+[![Deploy with Vercel](https://vercel.com/button)](https://vercel.com/new/clone?repository-url=https%3A%2F%2Fgithub.com%2Fxenral%2FXenRelayProxy&root-directory=vercel&env=RELAY_TOKEN)
 
 1. Click the button above. Vercel asks for a project name and `RELAY_TOKEN`.
 2. Set `RELAY_TOKEN` to the same auth key you use locally — the function rejects every request whose `X-Relay-Token` header doesn't match.

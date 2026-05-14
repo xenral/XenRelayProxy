@@ -60,39 +60,86 @@ func (c *Client) Do(ctx context.Context, req *http.Request) (*http.Response, err
 	if req != nil && req.URL != nil {
 		host = req.URL.Hostname()
 	}
-	account, err := c.sched.Select()
-	if err != nil {
-		c.metrics.Record(host, 0, 0, time.Since(start), err)
-		return nil, err
-	}
 	env, err := protocol.BuildEnvelope(req, c.cfg.AuthKey, c.cfg.MaxRequestBodyBytes)
 	if err != nil {
 		c.metrics.Record(host, 0, 0, time.Since(start), err)
 		return nil, err
 	}
-	prov := resolveProvider(account, c.cfg.Mode, c.apps, c.vercel)
-	reply, rawLen, err := prov.PostSingle(ctx, account, env)
-	class := ClassifyError(err)
-	switch class {
-	case ErrorQuota:
-		c.sched.ReportQuotaExceeded(account)
-	case ErrorThrottle:
-		c.sched.ReportThrottle(account)
-	case ErrorTransient:
-		c.sched.ReportError(account)
+
+	maxAttempts := c.cfg.Scheduler.RetryMaxAttempts
+	if maxAttempts < 1 {
+		maxAttempts = 1
 	}
-	if err != nil {
-		c.metrics.Record(host, 0, 0, time.Since(start), err)
-		return nil, err
+	var excluded []string
+	var lastErr error
+	for attempt := 0; attempt < maxAttempts; attempt++ {
+		account, selErr := c.sched.SelectExcluding(excluded)
+		if selErr != nil {
+			// Pool exhausted. If we already have a richer error from a
+			// previous attempt, surface that — it tells the user *why*
+			// (quota, throttle, transient 5xx) rather than the generic
+			// "no relay account available".
+			if lastErr != nil {
+				c.metrics.Record(host, 0, 0, time.Since(start), lastErr)
+				return nil, lastErr
+			}
+			c.metrics.Record(host, 0, 0, time.Since(start), selErr)
+			return nil, selErr
+		}
+		prov := resolveProvider(account, c.cfg.Mode, c.apps, c.vercel)
+		reply, rawLen, postErr := prov.PostSingle(ctx, account, env)
+		class := ClassifyError(postErr)
+		switch class {
+		case ErrorQuota:
+			c.sched.ReportQuotaExceeded(account)
+		case ErrorThrottle:
+			c.sched.ReportThrottle(account)
+		case ErrorTransient:
+			c.sched.ReportError(account)
+		}
+		if postErr == nil {
+			resp, parseErr := protocol.ResponseFromReply(req, reply)
+			if parseErr != nil {
+				c.sched.Release(account)
+				c.metrics.Record(host, 0, int64(rawLen), time.Since(start), parseErr)
+				return nil, parseErr
+			}
+			c.sched.ReportSuccess(account, time.Since(start))
+			c.sched.Release(account)
+			c.metrics.Record(host, requestSize(env), resp.ContentLength, time.Since(start), nil)
+			return resp, nil
+		}
+		c.sched.Release(account)
+		lastErr = postErr
+		// Retry policy is intentionally narrow. We ONLY retry on classes
+		// where switching to a different account can plausibly help:
+		//
+		//   Quota    — this account is out of its daily allowance; another
+		//              account has its own pool, so retry can succeed.
+		//   Throttle — this account is being short-window rate-limited;
+		//              another account is not.
+		//
+		// We deliberately do NOT retry on ErrorTransient. A transient 5xx
+		// from Apps Script almost always reflects a problem at the
+		// destination URL (which is the same for every account) or a
+		// blip in script.google.com itself (which every account shares).
+		// Switching accounts costs another full upstream call without
+		// changing the outcome — and when the upstream is broadly
+		// failing, this amplification turns each client request into
+		// N * FanoutMax * RetryMaxAttempts upstream hits, which is how a
+		// 22% success rate becomes a 7000-error storm. Same logic for
+		// Auth: a misconfigured deployment doesn't fix itself on retry.
+		switch class {
+		case ErrorQuota, ErrorThrottle:
+			excluded = append(excluded, account.Label)
+			continue
+		default:
+			c.metrics.Record(host, 0, 0, time.Since(start), postErr)
+			return nil, postErr
+		}
 	}
-	resp, err := protocol.ResponseFromReply(req, reply)
-	if err != nil {
-		c.metrics.Record(host, 0, int64(rawLen), time.Since(start), err)
-		return nil, err
-	}
-	c.sched.ReportSuccess(account, time.Since(start))
-	c.metrics.Record(host, requestSize(env), resp.ContentLength, time.Since(start), nil)
-	return resp, nil
+	c.metrics.Record(host, 0, 0, time.Since(start), lastErr)
+	return nil, lastErr
 }
 
 func (c *Client) DoBatch(ctx context.Context, reqs []*http.Request) ([]*http.Response, error) {
@@ -103,6 +150,7 @@ func (c *Client) DoBatch(ctx context.Context, reqs []*http.Request) ([]*http.Res
 	if err != nil {
 		return nil, err
 	}
+	defer c.sched.Release(account)
 	envs := make([]protocol.Envelope, 0, len(reqs))
 	for _, req := range reqs {
 		env, err := protocol.BuildEnvelope(req, "", c.cfg.MaxRequestBodyBytes)
@@ -164,6 +212,44 @@ func ClassifyError(err error) ErrorClass {
 	default:
 		return ErrorOther
 	}
+}
+
+// classPriority orders error classes from most to least consequential
+// for scheduler bookkeeping. Quota wins because reporting it triggers
+// the longest cooloff; auth next because it means the deployment is
+// unreachable until reconfigured. This is the precedence used when
+// multiple fan-out arms fail with different error classes.
+func classPriority(c ErrorClass) int {
+	switch c {
+	case ErrorQuota:
+		return 4
+	case ErrorAuth:
+		return 3
+	case ErrorThrottle:
+		return 2
+	case ErrorTransient:
+		return 1
+	default:
+		return 0
+	}
+}
+
+// worstError picks the most consequential error from a slice of fan-out
+// arm failures so Client.Do reports the right thing to the scheduler.
+func worstError(errs []error) error {
+	var worst error
+	worstRank := -1
+	for _, e := range errs {
+		if e == nil {
+			continue
+		}
+		r := classPriority(ClassifyError(e))
+		if r > worstRank {
+			worstRank = r
+			worst = e
+		}
+	}
+	return worst
 }
 
 func requestSize(env protocol.Envelope) int64 {

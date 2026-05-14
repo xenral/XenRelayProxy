@@ -23,7 +23,7 @@ export function Step({ num, warn, title, children }: StepProps) {
         >
           {num}
         </div>
-        <div className="flex-1 space-y-2">
+        <div className="flex-1 min-w-0 space-y-2">
           <h3 className="text-[14px] font-medium text-ink-1">{title}</h3>
           <div className="text-[13px] text-ink-2 leading-relaxed space-y-2">{children}</div>
         </div>

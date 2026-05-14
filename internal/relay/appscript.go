@@ -42,7 +42,7 @@ func (p *AppsScriptProvider) Name() string { return config.ModeAppsScript }
 
 func (p *AppsScriptProvider) PostSingle(ctx context.Context, account *scheduler.Account, env protocol.Envelope) (protocol.Reply, int, error) {
 	var reply protocol.Reply
-	body, err := p.postJSON(ctx, account, env)
+	body, err := p.raceJSON(ctx, account, env)
 	if err != nil {
 		return reply, len(body), err
 	}
@@ -52,23 +52,80 @@ func (p *AppsScriptProvider) PostSingle(ctx context.Context, account *scheduler.
 
 func (p *AppsScriptProvider) PostBatch(ctx context.Context, account *scheduler.Account, envs []protocol.Envelope) ([]protocol.Reply, error) {
 	payload := protocol.Envelope{K: p.cfg.AuthKey, Q: envs}
-	body, err := p.postJSON(ctx, account, payload)
+	sid := account.NextScriptID()
+	if sid == "" {
+		return nil, fmt.Errorf("account %s has no script ID", account.Label)
+	}
+	body, err := p.postJSONScript(ctx, sid, payload)
 	if err != nil {
 		return nil, err
 	}
 	return protocol.ParseBatch(body, len(envs))
 }
 
-func (p *AppsScriptProvider) postJSON(ctx context.Context, account *scheduler.Account, payload any) ([]byte, error) {
+// raceJSON hedges a single envelope across multiple deployment IDs of
+// the same account. The leased Account clone from the scheduler already
+// holds up to FanoutMax script IDs (cloneLeasedAccountFanout). We fire
+// the first arm immediately; each subsequent arm waits an additional
+// FanoutHedgeDelayMs. The first 2xx wins and cancels the rest. Cancelled
+// UrlFetchApp calls don't count against the account's daily quota — so
+// this is a pure latency win, not a quota multiplier.
+//
+// On full failure all errors are collected and the most consequential
+// one (worstError) is returned, so Client.Do can apply the most
+// conservative scheduler bookkeeping action.
+func (p *AppsScriptProvider) raceJSON(ctx context.Context, account *scheduler.Account, payload any) ([]byte, error) {
+	arms := account.ScriptIDs
+	if len(arms) == 0 {
+		return nil, fmt.Errorf("account %s has no script ID", account.Label)
+	}
+	if len(arms) == 1 {
+		return p.postJSONScript(ctx, arms[0], payload)
+	}
+	raceCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	type result struct {
+		body []byte
+		err  error
+	}
+	results := make(chan result, len(arms))
+	hedge := time.Duration(p.cfg.Scheduler.FanoutHedgeDelayMs) * time.Millisecond
+
+	for i, sid := range arms {
+		go func() {
+			if i > 0 && hedge > 0 {
+				timer := time.NewTimer(time.Duration(i) * hedge)
+				select {
+				case <-timer.C:
+				case <-raceCtx.Done():
+					timer.Stop()
+					results <- result{err: raceCtx.Err()}
+					return
+				}
+			}
+			body, err := p.postJSONScript(raceCtx, sid, payload)
+			results <- result{body: body, err: err}
+		}()
+	}
+
+	errs := make([]error, 0, len(arms))
+	for range arms {
+		r := <-results
+		if r.err == nil {
+			return r.body, nil
+		}
+		errs = append(errs, r.err)
+	}
+	return nil, worstError(errs)
+}
+
+func (p *AppsScriptProvider) postJSONScript(ctx context.Context, scriptID string, payload any) ([]byte, error) {
 	data, err := json.Marshal(payload)
 	if err != nil {
 		return nil, err
 	}
-	sid := account.NextScriptID()
-	if sid == "" {
-		return nil, fmt.Errorf("account %s has no script ID", account.Label)
-	}
-	endpoint := p.endpoint(sid)
+	endpoint := p.endpoint(scriptID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, bytes.NewReader(data))
 	if err != nil {
 		return nil, err
