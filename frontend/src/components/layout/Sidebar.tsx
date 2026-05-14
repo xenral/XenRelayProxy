@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import {
-  BadgeInfo, FileText, Gauge, Globe2, KeyRound, Languages, MonitorSmartphone,
+  BadgeInfo, FileText, Gauge, Globe2, Languages, MonitorSmartphone,
   Moon, Server, Settings as SettingsIcon, ShieldCheck, Sun, Terminal as TerminalIcon, Users, Wand2, X,
 } from "lucide-react";
 import { NavLink, useLocation } from "react-router-dom";
@@ -108,8 +108,13 @@ export function Sidebar() {
         {/* Brand row */}
         <div className="flex items-center gap-3 px-5 py-5">
           <div className="relative">
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg border border-signal/40 bg-signal/10">
-              <KeyRound className="size-4 text-signal" />
+            <div className="flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg border border-signal/40 bg-bg-inset">
+              <img
+                src="/logo.png"
+                alt="XenRelayProxy"
+                className="h-full w-full object-cover"
+                draggable={false}
+              />
             </div>
             <span className="absolute -bottom-0.5 -right-0.5 h-2 w-2 rounded-full bg-signal shadow-[0_0_8px_hsl(var(--signal))]" />
           </div>

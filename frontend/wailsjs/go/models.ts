@@ -39,6 +39,10 @@ export namespace config {
 	    state_persist_interval_seconds: number;
 	    keepalive_interval_seconds: number;
 	    prewarm_on_start: boolean;
+	    fanout_max: number;
+	    fanout_hedge_delay_ms: number;
+	    account_max_in_flight: number;
+	    retry_max_attempts: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new Scheduler(source);
@@ -54,6 +58,10 @@ export namespace config {
 	        this.state_persist_interval_seconds = source["state_persist_interval_seconds"];
 	        this.keepalive_interval_seconds = source["keepalive_interval_seconds"];
 	        this.prewarm_on_start = source["prewarm_on_start"];
+	        this.fanout_max = source["fanout_max"];
+	        this.fanout_hedge_delay_ms = source["fanout_hedge_delay_ms"];
+	        this.account_max_in_flight = source["account_max_in_flight"];
+	        this.retry_max_attempts = source["retry_max_attempts"];
 	    }
 	}
 	export class Config {
@@ -424,6 +432,8 @@ export namespace scheduler {
 	    total_calls: number;
 	    total_errors: number;
 	    weight: number;
+	    in_flight: number;
+	    max_in_flight: number;
 	
 	    static createFrom(source: any = {}) {
 	        return new AccountStats(source);
@@ -444,6 +454,8 @@ export namespace scheduler {
 	        this.total_calls = source["total_calls"];
 	        this.total_errors = source["total_errors"];
 	        this.weight = source["weight"];
+	        this.in_flight = source["in_flight"];
+	        this.max_in_flight = source["max_in_flight"];
 	    }
 	}
 	export class Stats {

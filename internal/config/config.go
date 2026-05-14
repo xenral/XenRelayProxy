@@ -120,6 +120,30 @@ type Scheduler struct {
 	StatePersistIntervalSeconds int     `json:"state_persist_interval_seconds"`
 	KeepaliveIntervalSeconds    int     `json:"keepalive_interval_seconds"`
 	PrewarmOnStart              bool    `json:"prewarm_on_start"`
+	// FanoutMax bounds how many of an account's script_ids are raced in
+	// parallel per request. 1 disables fan-out (single shot). Apps Script
+	// has an undocumented ~30 concurrent execution cap per *script
+	// project* shared across all its deployments, so keep this small —
+	// 2 is enough to mask cold-container starts without crowding the cap.
+	FanoutMax int `json:"fanout_max"`
+	// FanoutHedgeDelayMs is the pause before each additional fan-out arm
+	// fires after the first. 0 fires all arms simultaneously (lowest
+	// latency, highest wasted work). 150ms means fast responses never
+	// trigger a second arm; only the slow tail pays.
+	FanoutHedgeDelayMs int `json:"fanout_hedge_delay_ms"`
+	// AccountMaxInFlight caps concurrent in-flight requests *per account*.
+	// Apps Script has an undocumented ~30 concurrent execution cap per
+	// script project (shared across deployments), so 20 is a safe default —
+	// leaves headroom for keepalives and uncancelled fan-out arms. When
+	// every eligible account is at capacity Select() returns
+	// ErrNoAccountAvailable; the listener treats this like a quota miss and
+	// retries on a different account if one is available.
+	AccountMaxInFlight int `json:"account_max_in_flight"`
+	// RetryMaxAttempts bounds how many times Client.Do retries on a fresh
+	// account when the previous attempt hit a quota/throttle/transient
+	// error. 1 means single shot (no retry); 3 means up to 3 distinct
+	// accounts get tried before giving up. Auth errors never retry.
+	RetryMaxAttempts int `json:"retry_max_attempts"`
 }
 
 func Load(path string) (Config, error) {
@@ -297,6 +321,18 @@ func (c *Config) SetDefaults() {
 	if c.Scheduler.KeepaliveIntervalSeconds == 0 {
 		c.Scheduler.KeepaliveIntervalSeconds = 180
 	}
+	if c.Scheduler.FanoutMax == 0 {
+		c.Scheduler.FanoutMax = 2
+	}
+	if c.Scheduler.FanoutHedgeDelayMs == 0 {
+		c.Scheduler.FanoutHedgeDelayMs = 150
+	}
+	if c.Scheduler.AccountMaxInFlight == 0 {
+		c.Scheduler.AccountMaxInFlight = 20
+	}
+	if c.Scheduler.RetryMaxAttempts == 0 {
+		c.Scheduler.RetryMaxAttempts = 2
+	}
 }
 
 func (c *Config) Normalize() error {
@@ -433,6 +469,18 @@ func (c Config) Validate() error {
 	}
 	if c.Scheduler.QuotaSafetyMargin <= 0 || c.Scheduler.QuotaSafetyMargin > 1 {
 		return errors.New("scheduler.quota_safety_margin must be > 0 and <= 1")
+	}
+	if c.Scheduler.FanoutMax < 1 || c.Scheduler.FanoutMax > 5 {
+		return fmt.Errorf("scheduler.fanout_max must be in [1, 5] (got %d)", c.Scheduler.FanoutMax)
+	}
+	if c.Scheduler.FanoutHedgeDelayMs < 0 {
+		return fmt.Errorf("scheduler.fanout_hedge_delay_ms must be >= 0 (got %d)", c.Scheduler.FanoutHedgeDelayMs)
+	}
+	if c.Scheduler.AccountMaxInFlight < 1 || c.Scheduler.AccountMaxInFlight > 30 {
+		return fmt.Errorf("scheduler.account_max_in_flight must be in [1, 30] (got %d)", c.Scheduler.AccountMaxInFlight)
+	}
+	if c.Scheduler.RetryMaxAttempts < 1 || c.Scheduler.RetryMaxAttempts > 5 {
+		return fmt.Errorf("scheduler.retry_max_attempts must be in [1, 5] (got %d)", c.Scheduler.RetryMaxAttempts)
 	}
 	return nil
 }

@@ -1,4 +1,4 @@
-import { ExternalLink, FileText, KeyRound, Server } from "lucide-react";
+import { ExternalLink, FileText, Server } from "lucide-react";
 import { useT } from "@/i18n";
 import { useStatus } from "@/lib/queries";
 import { Card } from "@/components/ui/card";
@@ -13,8 +13,13 @@ export default function AboutPage() {
     <div className="mx-auto max-w-4xl space-y-5 animate-fade-in">
       <Card className="overflow-hidden p-5 sm:p-6 md:p-7">
         <div className="flex items-start gap-4 sm:gap-5">
-          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-signal/40 bg-signal/10 sm:h-14 sm:w-14">
-            <KeyRound className="size-5 text-signal sm:size-6" />
+          <div className="relative flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-signal/40 bg-bg-inset sm:h-14 sm:w-14">
+            <img
+              src="/logo.png"
+              alt="XenRelayProxy"
+              className="h-full w-full object-cover"
+              draggable={false}
+            />
             <span className="absolute -bottom-1 -right-1 h-3 w-3 rounded-full bg-signal shadow-[0_0_12px_hsl(var(--signal))]" />
           </div>
           <div className="flex-1 min-w-0">
@@ -63,12 +68,12 @@ export default function AboutPage() {
           </p>
         </div>
         <a
-          href="https://github.com/AlimorshedZade/MasterHttpRelayVPN"
+          href="https://github.com/xenral/XenRelayProxy"
           target="_blank"
           rel="noreferrer"
           className="inline-flex shrink-0 items-center gap-2 rounded-full border border-line-strong px-4 py-1.5 text-[12.5px] text-ink-1 hover:bg-bg-inset transition-colors"
         >
-          MasterHttpRelayVPN
+          xenral/XenRelayProxy
           <ExternalLink className="size-3.5" />
         </a>
       </Card>

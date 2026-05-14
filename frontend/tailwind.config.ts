@@ -70,8 +70,22 @@ export default {
         },
         "connect-burst": {
           "0%":   { transform: "scale(1)",    boxShadow: "0 0 0 0 hsl(var(--signal) / 0.85)" },
-          "40%":  { transform: "scale(1.06)" },
-          "100%": { transform: "scale(1)",    boxShadow: "0 0 0 56px hsl(var(--signal) / 0)" },
+          "35%":  { transform: "scale(1.07)" },
+          "100%": { transform: "scale(1)",    boxShadow: "0 0 0 60px hsl(var(--signal) / 0)" },
+        },
+        "connect-pulse-once": {
+          "0%":   { boxShadow: "0 0 0 0 hsl(var(--signal) / 0.65)", opacity: "1" },
+          "70%":  { boxShadow: "0 0 0 28px hsl(var(--signal) / 0)", opacity: "0.4" },
+          "100%": { boxShadow: "0 0 0 0 hsl(var(--signal) / 0)",    opacity: "0" },
+        },
+        "orb-pulse": {
+          "0%":   { boxShadow: "0 0 0 0 hsl(var(--warn) / 0.55)", opacity: "0.95" },
+          "70%":  { boxShadow: "0 0 0 22px hsl(var(--warn) / 0)", opacity: "0.35" },
+          "100%": { boxShadow: "0 0 0 0 hsl(var(--warn) / 0)",    opacity: "0" },
+        },
+        "orb-dot": {
+          "0%, 100%": { transform: "scale(1)",    opacity: "0.95" },
+          "50%":      { transform: "scale(1.18)", opacity: "1" },
         },
         "spin-accel": {
           "0%":   { transform: "rotate(0deg)",   animationTimingFunction: "cubic-bezier(0.6, 0.05, 0.95, 0.4)" },
@@ -100,7 +114,10 @@ export default {
         "pulse-ring": "pulse-ring 2s ease-out infinite",
         "ticker": "ticker 1.4s ease-in-out infinite",
         "marquee": "marquee 18s linear infinite",
-        "connect-burst": "connect-burst 900ms cubic-bezier(0.2, 0.7, 0.2, 1) 1",
+        "connect-burst": "connect-burst 1200ms cubic-bezier(0.22, 1, 0.36, 1) 1",
+        "connect-pulse-once": "connect-pulse-once 1400ms cubic-bezier(0.22, 1, 0.36, 1) 1 forwards",
+        "orb-pulse": "orb-pulse 1.8s cubic-bezier(0.22, 1, 0.36, 1) infinite",
+        "orb-dot": "orb-dot 1.4s ease-in-out infinite",
         "spin-accel": "spin-accel 1.6s cubic-bezier(0.6, 0.05, 0.95, 0.4) infinite",
         "spin-fast": "spin-fast 0.7s linear infinite",
         "spin-slow": "spin-slow 2.4s linear infinite",
