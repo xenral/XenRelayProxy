@@ -443,11 +443,34 @@ func (s *Scheduler) SaveState() error {
 	if err != nil {
 		return err
 	}
-	tmp := s.stateFile + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
+	return writeFileAtomic(s.stateFile, append(data, '\n'), 0o600)
+}
+
+// writeFileAtomic writes data to path via tmp + fsync + rename. Without
+// the fsync, an interrupted shutdown on Windows can leave NTFS with a
+// file at full length but full of NULs, which then fails json.Unmarshal
+// with "invalid character '\x00'" on next start.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
+	tmp := path + ".tmp"
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
 		return err
 	}
-	return os.Rename(tmp, s.stateFile)
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 func (s *Scheduler) LoadState() error {
@@ -458,9 +481,14 @@ func (s *Scheduler) LoadState() error {
 	if err != nil {
 		return err
 	}
+	// Scheduler state is a perf optimization, not load-bearing — if the
+	// file is unreadable for any reason (zero-filled by an interrupted
+	// shutdown, stale schema, hand-edit), drop it and start fresh rather
+	// than blocking Connect.
 	var state map[string]persistedAccount
 	if err := json.Unmarshal(data, &state); err != nil {
-		return err
+		_ = os.Remove(s.stateFile)
+		return nil
 	}
 	now := time.Now()
 	s.mu.Lock()

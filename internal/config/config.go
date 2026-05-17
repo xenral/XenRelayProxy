@@ -151,15 +151,41 @@ func Load(path string) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
+	data, err = sanitizeJSONBytes(data, path)
+	if err != nil {
+		return Config{}, err
+	}
 	var cfg Config
 	if err := json.Unmarshal(data, &cfg); err != nil {
-		return Config{}, err
+		return Config{}, fmt.Errorf("parse %s: %w", path, err)
 	}
 	cfg.SetDefaults()
 	if err := cfg.Normalize(); err != nil {
 		return Config{}, err
 	}
 	return cfg, cfg.Validate()
+}
+
+// sanitizeJSONBytes strips a UTF-8 BOM, rejects UTF-16 BOMs with a clear
+// message, and treats an all-NUL / empty payload as a corrupted file
+// (typical Windows symptom: WriteFile extended the file length but the
+// bytes never flushed before a crash, leaving NTFS with a zero-filled
+// allocation).
+func sanitizeJSONBytes(data []byte, path string) ([]byte, error) {
+	if len(data) >= 3 && data[0] == 0xEF && data[1] == 0xBB && data[2] == 0xBF {
+		data = data[3:]
+	}
+	if len(data) >= 2 && ((data[0] == 0xFF && data[1] == 0xFE) || (data[0] == 0xFE && data[1] == 0xFF)) {
+		return nil, fmt.Errorf("%s appears to be UTF-16 encoded — re-save it as UTF-8 (e.g. open in VS Code, change encoding to UTF-8, save)", path)
+	}
+	trimmed := strings.TrimLeft(string(data), " \t\r\n")
+	if trimmed == "" {
+		return nil, fmt.Errorf("%s is empty", path)
+	}
+	if trimmed[0] == 0 {
+		return nil, fmt.Errorf("%s is corrupted (zero-filled) — most likely an interrupted write. Delete the file and re-save your settings from the app", path)
+	}
+	return []byte(trimmed), nil
 }
 
 // SaveDraft writes cfg without running Validate, so partial configs (e.g. with
@@ -191,8 +217,32 @@ func writeJSON(path string, cfg Config) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil && filepath.Dir(path) != "." {
 		return err
 	}
+	return writeFileAtomic(path, append(data, '\n'), 0o600)
+}
+
+// writeFileAtomic writes data to path via a tmp file + fsync + rename so
+// a crash or power loss can't leave path zero-filled. NTFS in particular
+// extends the file length immediately on WriteFile and only flushes the
+// bytes lazily; without the fsync, an interrupted shutdown can yield a
+// full-length file of NULs.
+func writeFileAtomic(path string, data []byte, perm os.FileMode) error {
 	tmp := path + ".tmp"
-	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, perm)
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(data); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		f.Close()
+		os.Remove(tmp)
+		return err
+	}
+	if err := f.Close(); err != nil {
+		os.Remove(tmp)
 		return err
 	}
 	return os.Rename(tmp, path)
