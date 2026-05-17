@@ -144,8 +144,16 @@ jobs:
 
       - name: Create .deb package
         run: |
-          VERSION="${GITHUB_REF_NAME:-${{ inputs.tag }}}"
+          # Prefer the explicit dispatch input; fall back to the tag ref name.
+          # Using `${VAR:-x}` bash syntax with GITHUB_REF_NAME is wrong because
+          # GITHUB_REF_NAME is always set (to "master" on a non-tag trigger),
+          # so the fallback never fires and dpkg-deb rejects Version: master.
+          VERSION="${{ inputs.tag || github.ref_name }}"
           VERSION="${VERSION#v}"  # strip leading v
+          if ! [[ "$VERSION" =~ ^[0-9] ]]; then
+            echo "::error::Refusing to build .deb with non-numeric Version '$VERSION' — run this workflow on a v* tag or via workflow_dispatch with a v* input." >&2
+            exit 1
+          fi
           PKG_DIR="build/deb/xenrelayproxy_${VERSION}_amd64"
           mkdir -p "$PKG_DIR/DEBIAN"
           mkdir -p "$PKG_DIR/usr/bin"
@@ -273,8 +281,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name || inputs.tag }}
-          name: "${{ env.APP_NAME }} ${{ github.ref_name || inputs.tag }}"
+          tag_name: ${{ inputs.tag || github.ref_name }}
+          name: "${{ env.APP_NAME }} ${{ inputs.tag || github.ref_name }}"
           draft: false
           prerelease: false
           generate_release_notes: true
